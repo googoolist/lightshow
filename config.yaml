@@ -1,0 +1,112 @@
+# Raspberry Pi DMX Light Show Configuration
+
+# Audio Input Settings
+audio:
+  device_name: "Sound Blaster"  # Part of device name to match
+  sample_rate: 44100
+  buffer_size: 1024
+  input_channels: 2
+
+# DMX Settings
+dmx:
+  interface: "/dev/ttyUSB0"  # DMX USB interface device
+  universe: 1
+  refresh_rate: 30  # Hz
+
+# Light Fixtures
+lights:
+  par_lights:
+    - name: "Par Light 1"
+      dmx_address: 1
+      channels:
+        red: 1
+        green: 2
+        blue: 3
+        intensity: 4
+        strobe: 5
+        program: 6
+    - name: "Par Light 2"
+      dmx_address: 7
+      channels:
+        red: 7
+        green: 8
+        blue: 9
+        intensity: 10
+        strobe: 11
+        program: 12
+    - name: "Par Light 3"
+      dmx_address: 13
+      channels:
+        red: 13
+        green: 14
+        blue: 15
+        intensity: 16
+        strobe: 17
+        program: 18
+    - name: "Par Light 4"
+      dmx_address: 19
+      channels:
+        red: 19
+        green: 20
+        blue: 21
+        intensity: 22
+        strobe: 23
+        program: 24
+
+# Audio Processing
+audio_processing:
+  # Beat detection parameters
+  beat_detection:
+    onset_threshold: 0.3
+    min_tempo: 60
+    max_tempo: 200
+    hop_length: 512
+    
+  # Frequency analysis
+  frequency_bands:
+    bass: [20, 250]      # Hz
+    mid: [250, 4000]     # Hz
+    treble: [4000, 20000] # Hz
+    
+  # Volume analysis
+  volume:
+    smoothing_factor: 0.7
+    gain: 2.0
+    noise_floor: 0.01
+
+# Light Effects
+effects:
+  # Color palettes for different moods
+  color_palettes:
+    energetic: 
+      - [255, 0, 0]    # Red
+      - [0, 255, 0]    # Green
+      - [0, 0, 255]    # Blue
+      - [255, 255, 0]  # Yellow
+      - [255, 0, 255]  # Magenta
+      - [0, 255, 255]  # Cyan
+    
+    calm:
+      - [100, 150, 255] # Soft blue
+      - [150, 100, 255] # Soft purple
+      - [255, 150, 100] # Soft orange
+      - [100, 255, 150] # Soft green
+    
+    warm:
+      - [255, 100, 0]   # Orange
+      - [255, 150, 0]   # Amber
+      - [255, 200, 100] # Warm white
+      - [255, 0, 50]    # Red-orange
+
+  # Effect parameters
+  transition_speed: 0.8
+  intensity_multiplier: 0.9
+  beat_response_strength: 1.2
+  color_change_probability: 0.1
+
+# System Settings
+system:
+  debug: true
+  log_level: "INFO"
+  performance_monitoring: true
+
