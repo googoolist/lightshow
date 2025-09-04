@@ -19,39 +19,55 @@ lights:
     - name: "Par Light 1"
       dmx_address: 1
       channels:
-        red: 1
-        green: 2
-        blue: 3
-        intensity: 4
-        strobe: 5
-        program: 6
+        master_dimmer: 1    # CH1: Total dimming
+        red: 2              # CH2: Red Dimming
+        green: 3            # CH3: Green Dimming
+        blue: 4             # CH4: Blue Dimming
+        white: 5            # CH5: White Dimming
+        strobe: 6           # CH6: Total strobe
+        macro: 7            # CH7: Macro Function
+        function_speed: 8   # CH8: Function speed
+        light_strip: 9      # CH9: Light strip effect
+        strip_speed: 10     # CH10: Light strip speed
     - name: "Par Light 2"
-      dmx_address: 7
+      dmx_address: 11
       channels:
-        red: 7
-        green: 8
-        blue: 9
-        intensity: 10
-        strobe: 11
-        program: 12
+        master_dimmer: 11   # CH1: Total dimming
+        red: 12             # CH2: Red Dimming
+        green: 13           # CH3: Green Dimming
+        blue: 14            # CH4: Blue Dimming
+        white: 15           # CH5: White Dimming
+        strobe: 16          # CH6: Total strobe
+        macro: 17           # CH7: Macro Function
+        function_speed: 18  # CH8: Function speed
+        light_strip: 19     # CH9: Light strip effect
+        strip_speed: 20     # CH10: Light strip speed
     - name: "Par Light 3"
-      dmx_address: 13
+      dmx_address: 21
       channels:
-        red: 13
-        green: 14
-        blue: 15
-        intensity: 16
-        strobe: 17
-        program: 18
+        master_dimmer: 21   # CH1: Total dimming
+        red: 22             # CH2: Red Dimming
+        green: 23           # CH3: Green Dimming
+        blue: 24            # CH4: Blue Dimming
+        white: 25           # CH5: White Dimming
+        strobe: 26          # CH6: Total strobe
+        macro: 27           # CH7: Macro Function
+        function_speed: 28  # CH8: Function speed
+        light_strip: 29     # CH9: Light strip effect
+        strip_speed: 30     # CH10: Light strip speed
     - name: "Par Light 4"
-      dmx_address: 19
+      dmx_address: 31
       channels:
-        red: 19
-        green: 20
-        blue: 21
-        intensity: 22
-        strobe: 23
-        program: 24
+        master_dimmer: 31   # CH1: Total dimming
+        red: 32             # CH2: Red Dimming
+        green: 33           # CH3: Green Dimming
+        blue: 34            # CH4: Blue Dimming
+        white: 35           # CH5: White Dimming
+        strobe: 36          # CH6: Total strobe
+        macro: 37           # CH7: Macro Function
+        function_speed: 38  # CH8: Function speed
+        light_strip: 39     # CH9: Light strip effect
+        strip_speed: 40     # CH10: Light strip speed
 
 # Audio Processing
 audio_processing:
