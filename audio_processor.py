@@ -13,24 +13,34 @@ from collections import deque
 from scipy import signal
 import logging
 
-# Configure environment for Pipewire compatibility - force ALSA backend
-os.environ['SD_ENABLE_PULSE'] = '0'  # Disable PulseAudio backend
-os.environ['SDL_AUDIODRIVER'] = 'alsa'  # Force ALSA
-# Remove any PulseAudio environment variables that might interfere
-for env_var in ['PULSE_RUNTIME_PATH', 'PULSE_SERVER']:
-    if env_var in os.environ:
-        del os.environ[env_var]
+# Configure environment for better audio compatibility on Raspberry Pi
+try:
+    # Try to disable PulseAudio backend for sounddevice
+    os.environ['SD_ENABLE_PULSE'] = '0'
+    # Remove any PulseAudio environment variables that might interfere
+    for env_var in ['PULSE_RUNTIME_PATH', 'PULSE_SERVER']:
+        if env_var in os.environ:
+            del os.environ[env_var]
+except Exception:
+    pass  # Ignore any environment setup errors
 
 logger = logging.getLogger(__name__)
 
 class AudioProcessor:
     def __init__(self, config):
-        # Force sounddevice to use ALSA backend
+        # Configure sounddevice for better Raspberry Pi compatibility
         try:
-            sd.default.hostapi = 'ALSA'
-            logger.info("Forced sounddevice to use ALSA backend")
+            # Find ALSA host API if available
+            hostapis = sd.query_hostapis()
+            for i, api in enumerate(hostapis):
+                if 'ALSA' in api['name']:
+                    sd.default.hostapi = i
+                    logger.info(f"Set ALSA as default host API (index {i})")
+                    break
+            else:
+                logger.info("ALSA host API not found, using default")
         except Exception as e:
-            logger.warning(f"Could not force ALSA backend: {e}")
+            logger.warning(f"Could not configure host API: {e}")
         
         self.config = config['audio']
         self.processing_config = config['audio_processing']
