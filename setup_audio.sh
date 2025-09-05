@@ -244,15 +244,38 @@ done
 
 # Show device capabilities
 log "Checking device capabilities..."
-arecord -D "$ALSA_DEVICE" --dump-hw-params 2>/dev/null || warn "Could not query hardware parameters"
+echo "Hardware parameters for $ALSA_DEVICE:"
+arecord -D "$ALSA_DEVICE" --dump-hw-params 2>&1 || warn "Could not query hardware parameters"
+echo
+
+# Try to detect supported channels
+log "Detecting supported channel configurations..."
+SUPPORTED_CHANNELS=""
+for channels in 1 2; do
+    if arecord -D "$ALSA_DEVICE" -c "$channels" -f S16_LE -r 44100 -t wav -d 0.1 /dev/null 2>/dev/null; then
+        SUPPORTED_CHANNELS="$SUPPORTED_CHANNELS $channels"
+        success "Device supports $channels channel(s)"
+    else
+        log "Device does not support $channels channel(s)"
+    fi
+done
+
+if [[ -z "$SUPPORTED_CHANNELS" ]]; then
+    error "No supported channel configuration found!"
+    exit 1
+fi
+
+# Use the first supported channel count
+WORKING_CHANNELS=$(echo $SUPPORTED_CHANNELS | awk '{print $1}')
+log "Will use $WORKING_CHANNELS channel(s) for recording"
 
 echo "Recording 3 seconds of audio from $ALSA_DEVICE..."
 echo "Please make some noise or play music during this test..."
 sleep 2
 
-# Test recording with verbose error output
-log "Attempting recording with standard CD quality settings..."
-if arecord -D "$ALSA_DEVICE" -f cd -c 1 -t wav -d 3 "$TEST_FILE" 2>&1; then
+# Test recording with detected channel configuration
+log "Attempting recording with detected settings (${WORKING_CHANNELS} channels)..."
+if arecord -D "$ALSA_DEVICE" -c "$WORKING_CHANNELS" -f S16_LE -r 44100 -t wav -d 3 "$TEST_FILE" 2>&1; then
     success "Audio recording successful!"
     
     # Check if file has content
@@ -306,6 +329,7 @@ else
                 sed -i.tmp "s/input_channels: .*/input_channels: $channels/" config.yaml
                 rm -f config.yaml.tmp
                 success "Updated config.yaml: sample_rate=$rate, input_channels=$channels"
+                WORKING_CHANNELS=$channels
             fi
             
             recording_success=true
@@ -342,11 +366,12 @@ if [[ -f "$CONFIG_FILE" ]]; then
     # Backup original config
     cp "$CONFIG_FILE" "${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
     
-    # Update device name in config
+    # Update device name and channels in config
     sed -i.tmp "s/device_name: .*/device_name: \"$ALSA_DEVICE\"  # Auto-detected Sound Blaster/" "$CONFIG_FILE"
+    sed -i.tmp "s/input_channels: .*/input_channels: $WORKING_CHANNELS  # Auto-detected channel count/" "$CONFIG_FILE"
     rm -f "${CONFIG_FILE}.tmp"
     
-    success "Updated $CONFIG_FILE with device: $ALSA_DEVICE"
+    success "Updated $CONFIG_FILE with device: $ALSA_DEVICE, channels: $WORKING_CHANNELS"
 else
     warn "config.yaml not found in current directory"
 fi
