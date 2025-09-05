@@ -90,14 +90,42 @@ class AudioProcessor:
                 default_str = " (DEFAULT INPUT)" if is_default_input else ""
                 logger.info(f"  Device {i}: {device['name']} (inputs: {device['max_input_channels']}){default_str}")
             
+            # Handle different device name formats
+            device_name = self.config['device_name']
+            
             # If device_name is "default", use the system default
-            if self.config['device_name'] == 'default':
+            if device_name == 'default':
                 device_id = None  # Use sounddevice default
-                logger.info("Using system default audio device (Pipewire managed)")
+                logger.info("Using system default audio device")
+            elif device_name.startswith('hw:'):
+                # ALSA device string - find corresponding sounddevice index
+                logger.info(f"Looking for ALSA device: {device_name}")
+                # Extract card number from hw:X,Y format
+                try:
+                    card_num = int(device_name.split(':')[1].split(',')[0])
+                    logger.info(f"Looking for card {card_num} devices")
+                    
+                    # Find devices that might correspond to this card
+                    for i, device in enumerate(devices):
+                        device_name_lower = device['name'].lower()
+                        # Look for Sound Blaster or card-related names
+                        if (any(term in device_name_lower for term in ['sound blaster', 'creative', 'blaster', 's3']) 
+                            and device['max_input_channels'] >= self.input_channels):
+                            device_id = i
+                            logger.info(f"Found Sound Blaster device: {device['name']} (ID: {i})")
+                            break
+                    
+                    if device_id is None:
+                        logger.warning(f"Could not find device for {device_name}")
+                        device_id = None
+                        
+                except (ValueError, IndexError):
+                    logger.warning(f"Invalid ALSA device format: {device_name}")
+                    device_id = None
             else:
-                # Find specific device
+                # Find specific device by name
                 search_terms = [
-                    self.config['device_name'].lower(),
+                    device_name.lower(),
                     'sound blaster',
                     'creative',
                     'blaster'
@@ -117,7 +145,7 @@ class AudioProcessor:
                         break
                 
                 if device_id is None:
-                    logger.warning(f"Specific device '{self.config['device_name']}' not found")
+                    logger.warning(f"Specific device '{device_name}' not found")
                     logger.info("Falling back to system default device")
                     device_id = None  # Use default
             
@@ -175,18 +203,11 @@ class AudioProcessor:
         
         self.running = True
         
-        # Start audio stream with ALSA direct access
-        device_to_use = self.device_id
-        
-        # If device_name contains "hw:", use it directly as string
-        if isinstance(self.config.get('device_name'), str) and self.config['device_name'].startswith('hw:'):
-            device_to_use = self.config['device_name']
-            logger.info(f"Using direct ALSA device: {device_to_use}")
-        
+        # Start audio stream using device ID
         try:
-            # Try with direct ALSA device
+            # Try with detected device ID
             self.audio_stream = sd.InputStream(
-                device=device_to_use,
+                device=self.device_id,
                 channels=self.input_channels,
                 samplerate=self.sample_rate,
                 blocksize=self.buffer_size,
@@ -194,33 +215,25 @@ class AudioProcessor:
                 dtype=np.float32,
                 latency='high'
             )
-            logger.info(f"Created audio stream with device: {device_to_use}")
+            device_name = "default" if self.device_id is None else f"device {self.device_id}"
+            logger.info(f"Created audio stream with {device_name}")
         except Exception as e:
-            logger.warning(f"Failed to create audio stream with {device_to_use}: {e}")
-            logger.info("Trying with device index...")
+            logger.warning(f"Failed to create audio stream with device {self.device_id}: {e}")
+            logger.info("Trying with system default...")
             try:
-                # Fallback to device index
-                self.audio_stream = sd.InputStream(
-                    device=self.device_id,
-                    channels=self.input_channels,
-                    samplerate=self.sample_rate,
-                    blocksize=self.buffer_size,
-                    callback=self._audio_callback,
-                    dtype=np.float32
-                )
-                logger.info(f"Created audio stream with device index: {self.device_id}")
-            except Exception as e2:
-                logger.warning(f"Failed with device index: {e2}")
-                logger.info("Trying with system default...")
-                # Last resort - system default
+                # Fallback to system default
                 self.audio_stream = sd.InputStream(
                     device=None,
                     channels=2,
                     samplerate=44100,
+                    blocksize=2048,
                     callback=self._audio_callback,
                     dtype=np.float32
                 )
                 logger.info("Created audio stream with system default")
+            except Exception as e2:
+                logger.error(f"Failed to create any audio stream: {e2}")
+                raise
         
         self.audio_stream.start()
         
