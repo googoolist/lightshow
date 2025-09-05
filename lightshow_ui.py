@@ -97,17 +97,99 @@ class LightShowUI:
                          capture_output=True, timeout=10)
             time.sleep(2)
             
-            # Test Sound Blaster detection
+            # Detect Sound Blaster and get card info
             result = subprocess.run(['arecord', '-l'], capture_output=True, text=True, timeout=5)
-            if 'sound blaster' in result.stdout.lower() or 'creative' in result.stdout.lower() or 's3' in result.stdout.lower():
-                logger.info("✓ Sound Blaster detected")
-            else:
-                logger.warning("⚠ Sound Blaster not detected, check USB connection")
+            card_num = None
+            device_num = None
             
-            # Quick audio test
+            for line in result.stdout.split('\n'):
+                if 'sound blaster' in line.lower() or 'creative' in line.lower() or 's3' in line.lower():
+                    # Extract card and device numbers
+                    import re
+                    card_match = re.search(r'card (\d+):', line)
+                    device_match = re.search(r'device (\d+):', line)
+                    if card_match and device_match:
+                        card_num = card_match.group(1)
+                        device_num = device_match.group(1)
+                        logger.info(f"✓ Sound Blaster detected: card {card_num}, device {device_num}")
+                        break
+            
+            if card_num is None:
+                logger.warning("⚠ Sound Blaster not detected, check USB connection")
+                return
+                
+            # Create proper ALSA configuration
+            logger.info("Creating ALSA configuration...")
+            asoundrc_content = f"""# ALSA configuration for Sound Blaster
+pcm.!default {{
+    type asym
+    capture.pcm "mic"
+    playback.pcm "speaker"
+}}
+
+pcm.mic {{
+    type plug
+    slave {{
+        pcm "hw:{card_num},{device_num}"
+        channels 2
+        rate 44100
+        format S16_LE
+    }}
+}}
+
+pcm.speaker {{
+    type plug
+    slave {{
+        pcm "hw:{card_num},{device_num}"
+        channels 2
+        rate 44100
+        format S16_LE
+    }}
+}}
+
+ctl.!default {{
+    type hw
+    card {card_num}
+}}
+"""
+            
+            # Write ALSA config
+            home_dir = os.path.expanduser('~')
+            asoundrc_path = os.path.join(home_dir, '.asoundrc')
+            
+            # Backup existing config
+            if os.path.exists(asoundrc_path):
+                subprocess.run(['cp', asoundrc_path, f'{asoundrc_path}.backup'], capture_output=True)
+            
+            with open(asoundrc_path, 'w') as f:
+                f.write(asoundrc_content)
+            
+            logger.info(f"Created {asoundrc_path}")
+            
+            # Update lightshow config with detected card
+            try:
+                with open('config.yaml', 'r') as f:
+                    config_data = f.read()
+                
+                # Update device_name to use detected card
+                updated_config = re.sub(
+                    r'device_name: \d+.*',
+                    f'device_name: {card_num}  # Sound Blaster card {card_num} auto-detected',
+                    config_data
+                )
+                
+                with open('config.yaml', 'w') as f:
+                    f.write(updated_config)
+                    
+                logger.info(f"Updated config.yaml with card {card_num}")
+            except Exception as e:
+                logger.warning(f"Could not update config.yaml: {e}")
+            
+            # Test with new configuration
+            time.sleep(1)
             test_result = subprocess.run([
-                'timeout', '2', 'arecord', '-D', 'hw:2,0', '-f', 'S16_LE', 
-                '-r', '44100', '-c', '2', '-d', '1', '/tmp/test_audio.wav'
+                'timeout', '2', 'arecord', '-D', f'hw:{card_num},{device_num}', 
+                '-f', 'S16_LE', '-r', '44100', '-c', '2', '-d', '1', '/tmp/test_audio.wav'
             ], capture_output=True, timeout=5)
             
             if test_result.returncode == 0:
@@ -115,6 +197,17 @@ class LightShowUI:
                 subprocess.run(['rm', '-f', '/tmp/test_audio.wav'], capture_output=True)
             else:
                 logger.warning("⚠ Audio system test failed")
+                # Try mono as fallback
+                test_mono = subprocess.run([
+                    'timeout', '2', 'arecord', '-D', f'hw:{card_num},{device_num}', 
+                    '-f', 'S16_LE', '-r', '44100', '-c', '1', '-d', '1', '/tmp/test_mono.wav'
+                ], capture_output=True, timeout=5)
+                
+                if test_mono.returncode == 0:
+                    logger.info("✓ Mono audio test passed")
+                    subprocess.run(['rm', '-f', '/tmp/test_mono.wav'], capture_output=True)
+                else:
+                    logger.warning("⚠ Both stereo and mono tests failed")
             
             logger.info("Audio system initialization complete")
             
