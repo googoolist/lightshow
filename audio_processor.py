@@ -274,6 +274,8 @@ class AudioProcessor:
                     if len(onset_strength) > 0:
                         self.beat_strength = np.max(onset_strength[-10:])  # Recent strength
                     
+                    logger.info(f"Beat detected! Strength: {self.beat_strength:.3f}, Total beats: {len(self.onset_times) + 1}")
+                    
                     # Update tempo estimation
                     self.onset_times.append(current_time)
                     self._estimate_tempo()
@@ -288,12 +290,17 @@ class AudioProcessor:
     
     def _estimate_tempo(self):
         """Estimate current tempo from recent beats."""
-        if len(self.onset_times) < 4:
+        logger.info(f"Tempo estimation: {len(self.onset_times)} beats recorded")
+        
+        if len(self.onset_times) < 2:
+            logger.info("Not enough beats for tempo estimation (need at least 2)")
             return
         
         # Calculate intervals between beats
         recent_onsets = list(self.onset_times)[-8:]  # Last 8 beats
         intervals = np.diff(recent_onsets)
+        
+        logger.info(f"Beat intervals: {intervals}")
         
         if len(intervals) > 0:
             # Filter out outliers
@@ -303,16 +310,22 @@ class AudioProcessor:
                 (intervals < median_interval * 2.0)
             ]
             
+            logger.info(f"Valid intervals after filtering: {valid_intervals}")
+            
             if len(valid_intervals) > 0:
                 avg_interval = np.mean(valid_intervals)
-                self.tempo = 60.0 / avg_interval  # Convert to BPM
+                calculated_tempo = 60.0 / avg_interval  # Convert to BPM
+                
+                logger.info(f"Calculated tempo: {calculated_tempo:.1f} BPM (from avg interval: {avg_interval:.3f}s)")
                 
                 # Clamp to reasonable range
                 self.tempo = np.clip(
-                    self.tempo,
+                    calculated_tempo,
                     self.processing_config['beat_detection']['min_tempo'],
                     self.processing_config['beat_detection']['max_tempo']
                 )
+                
+                logger.info(f"Final tempo (after clipping): {self.tempo:.1f} BPM")
     
     def get_audio_features(self):
         """Get current audio analysis features."""

@@ -73,7 +73,7 @@ lights:
 audio_processing:
   # Beat detection parameters
   beat_detection:
-    onset_threshold: 0.3
+    onset_threshold: 0.15  # Lowered for better sensitivity
     min_tempo: 60
     max_tempo: 200
     hop_length: 512
