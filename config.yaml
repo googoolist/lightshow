@@ -2,10 +2,10 @@
 
 # Audio Input Settings
 audio:
-  device_name: "hw:2,0"  # Sound Blaster Play! 3 (card 2, device 0)
+  device_name: "default"  # Use Pipewire default device
   sample_rate: 44100
   buffer_size: 2048  # Increased for Raspberry Pi stability
-  input_channels: 2  # Sound Blaster supports stereo only
+  input_channels: 2  # Stereo input
 
 # DMX Settings
 dmx:
