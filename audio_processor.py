@@ -3,6 +3,7 @@ Audio processing module for real-time beat detection and volume analysis.
 Handles input from Sound Blaster USB dongle and extracts musical features.
 """
 
+import os
 import numpy as np
 import librosa
 import sounddevice as sd
@@ -11,6 +12,10 @@ import time
 from collections import deque
 from scipy import signal
 import logging
+
+# Configure environment for Pipewire compatibility
+os.environ['PULSE_RUNTIME_PATH'] = '/run/user/' + str(os.getuid()) + '/pulse'
+os.environ['PULSE_SERVER'] = 'unix:/run/user/' + str(os.getuid()) + '/pulse/native'
 
 logger = logging.getLogger(__name__)
 
@@ -59,57 +64,65 @@ class AudioProcessor:
         self._setup_audio_device()
     
     def _setup_audio_device(self):
-        """Find and configure the Sound Blaster audio device."""
-        devices = sd.query_devices()
-        device_id = None
-        
-        logger.info("Scanning for audio devices...")
-        logger.info(f"Looking for device matching: '{self.config['device_name']}' with {self.input_channels} input channels")
-        
-        # Log all available devices for debugging
-        for i, device in enumerate(devices):
-            logger.info(f"Device {i}: {device['name']} (inputs: {device['max_input_channels']})")
-        
-        # Find Sound Blaster device with more flexible matching
-        search_terms = [
-            self.config['device_name'].lower(),
-            'sound blaster',
-            'creative',
-            'blaster'
-        ]
-        
-        for i, device in enumerate(devices):
-            device_name_lower = device['name'].lower()
-            logger.info(f"Checking device {i}: '{device['name']}' (inputs: {device['max_input_channels']}, need: {self.input_channels})")
+        """Find and configure audio device with Pipewire support."""
+        try:
+            devices = sd.query_devices()
+            device_id = None
             
-            # Check if any search term matches and device has input channels
-            for search_term in search_terms:
-                logger.info(f"  Testing search term: '{search_term}' in '{device_name_lower}'")
-                if search_term in device_name_lower:
-                    logger.info(f"  Name match found! Checking input channels: {device['max_input_channels']} >= {self.input_channels}")
-                    if device['max_input_channels'] >= self.input_channels:
-                        device_id = i
-                        logger.info(f"Successfully found audio device: {device['name']} (matched: '{search_term}')")
-                        break
-                    else:
-                        logger.warning(f"  Device '{device['name']}' matches name but has insufficient input channels ({device['max_input_channels']} < {self.input_channels})")
-            else:
-                # This continue is only executed if the inner loop didn't break
-                continue
-            # If we get here, the inner loop was broken and we found a device
-            break
-        
-        if device_id is None:
-            logger.warning(f"No device matching '{self.config['device_name']}' found")
-            logger.info("Available input devices:")
+            logger.info("Scanning for audio devices...")
+            logger.info(f"Looking for device: '{self.config['device_name']}' with {self.input_channels} input channels")
+            
+            # Log all available devices for debugging
+            logger.info("Available audio devices:")
             for i, device in enumerate(devices):
-                if device['max_input_channels'] > 0:
-                    logger.info(f"  {i}: {device['name']}")
+                is_default_input = (i == sd.default.device[0])
+                default_str = " (DEFAULT INPUT)" if is_default_input else ""
+                logger.info(f"  Device {i}: {device['name']} (inputs: {device['max_input_channels']}){default_str}")
             
-            logger.warning("Using default input device")
-            device_id = sd.default.device[0]
-        
-        self.device_id = device_id
+            # If device_name is "default", use the system default
+            if self.config['device_name'] == 'default':
+                device_id = None  # Use sounddevice default
+                logger.info("Using system default audio device (Pipewire managed)")
+            else:
+                # Find specific device
+                search_terms = [
+                    self.config['device_name'].lower(),
+                    'sound blaster',
+                    'creative',
+                    'blaster'
+                ]
+                
+                for i, device in enumerate(devices):
+                    device_name_lower = device['name'].lower()
+                    
+                    # Check if any search term matches and device has input channels
+                    for search_term in search_terms:
+                        if search_term in device_name_lower and device['max_input_channels'] >= self.input_channels:
+                            device_id = i
+                            logger.info(f"Found matching device: {device['name']} (ID: {i})")
+                            break
+                    
+                    if device_id is not None:
+                        break
+                
+                if device_id is None:
+                    logger.warning(f"Specific device '{self.config['device_name']}' not found")
+                    logger.info("Falling back to system default device")
+                    device_id = None  # Use default
+            
+            self.device_id = device_id
+            
+            # Log final device selection
+            if device_id is None:
+                logger.info("Will use system default audio device")
+            else:
+                selected_device = devices[device_id]
+                logger.info(f"Selected device: {selected_device['name']} (ID: {device_id})")
+                
+        except Exception as e:
+            logger.error(f"Error setting up audio device: {e}")
+            logger.info("Falling back to system default")
+            self.device_id = None
     
     def _audio_callback(self, indata, frames, time, status):
         """Callback function for audio stream."""
@@ -151,28 +164,44 @@ class AudioProcessor:
         
         self.running = True
         
-        # Start audio stream with optimized settings for Raspberry Pi
+        # Start audio stream with Pipewire-compatible settings
         try:
+            # First try with Pipewire-optimized settings
             self.audio_stream = sd.InputStream(
                 device=self.device_id,
                 channels=self.input_channels,
                 samplerate=self.sample_rate,
                 blocksize=self.buffer_size,
                 callback=self._audio_callback,
-                latency='low',  # Request low latency
-                dtype=np.float32  # Use float32 for better performance
+                dtype=np.float32,
+                latency='high'  # Use higher latency for Pipewire compatibility
             )
+            logger.info("Created audio stream with Pipewire-optimized settings")
         except Exception as e:
-            logger.warning(f"Failed to create audio stream with optimized settings: {e}")
-            logger.info("Trying with basic settings...")
-            # Fallback to basic settings
-            self.audio_stream = sd.InputStream(
-                device=self.device_id,
-                channels=self.input_channels,
-                samplerate=self.sample_rate,
-                blocksize=self.buffer_size,
-                callback=self._audio_callback
-            )
+            logger.warning(f"Failed to create optimized audio stream: {e}")
+            logger.info("Trying with basic Pipewire settings...")
+            try:
+                # Fallback to basic Pipewire settings
+                self.audio_stream = sd.InputStream(
+                    device=self.device_id,
+                    channels=self.input_channels,
+                    samplerate=self.sample_rate,
+                    blocksize=self.buffer_size,
+                    callback=self._audio_callback,
+                    dtype=np.float32
+                )
+                logger.info("Created audio stream with basic Pipewire settings")
+            except Exception as e2:
+                logger.warning(f"Failed with basic settings: {e2}")
+                logger.info("Trying with minimal settings...")
+                # Last resort - minimal settings
+                self.audio_stream = sd.InputStream(
+                    device=None,  # Use absolute default
+                    channels=2,   # Force stereo
+                    samplerate=44100,  # Force standard rate
+                    callback=self._audio_callback
+                )
+                logger.info("Created audio stream with minimal default settings")
         
         self.audio_stream.start()
         
