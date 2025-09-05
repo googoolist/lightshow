@@ -300,7 +300,7 @@ class AudioProcessor:
                     self._last_overflow_warning = 0
                 import time
                 current_time = time.time()
-                if current_time - self._last_overflow_warning > 5:  # Only warn every 5 seconds
+                if current_time - self._last_overflow_warning > 30:  # Only warn every 30 seconds
                     logger.warning(f"Audio input overflow detected - consider increasing buffer size")
                     self._last_overflow_warning = current_time
             elif status:
@@ -458,21 +458,31 @@ class AudioProcessor:
     
     def _processing_loop(self):
         """Main processing loop for audio analysis."""
+        process_counter = 0
         while self.running:
             try:
-                if len(self.audio_buffer) < self.sample_rate:
-                    time.sleep(0.01)
+                # Check if we have enough audio data
+                buffer_len = len(self.audio_buffer)
+                if buffer_len < self.sample_rate // 2:  # Need at least 0.5 seconds
+                    time.sleep(0.02)
                     continue
                 
-                # Get recent audio data
-                audio_data = np.array(list(self.audio_buffer)[-self.sample_rate:])
+                # Use smaller chunks to reduce processing load
+                chunk_size = min(self.sample_rate, buffer_len)
+                audio_data = np.array(list(self.audio_buffer)[-chunk_size:])
                 
-                # Process audio
+                # Always process volume (lightweight)
                 self._analyze_volume(audio_data)
-                self._analyze_frequency_bands(audio_data)
-                self._detect_beats(audio_data)
                 
-                time.sleep(1.0 / 60)  # 60 FPS processing
+                # Process other features less frequently to reduce CPU load
+                process_counter += 1
+                if process_counter % 2 == 0:  # Every other iteration
+                    self._analyze_frequency_bands(audio_data)
+                if process_counter % 3 == 0:  # Every third iteration  
+                    self._detect_beats(audio_data)
+                
+                # Slower processing rate for Raspberry Pi
+                time.sleep(1.0 / 30)  # 30 FPS instead of 60
                 
             except Exception as e:
                 logger.error(f"Error in processing loop: {e}")
