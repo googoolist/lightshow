@@ -40,22 +40,13 @@ if [[ $EUID -eq 0 ]]; then
    exit 1
 fi
 
-# Step 1: Install required packages
-log "Installing required audio packages..."
-sudo apt update
-sudo apt install -y libasound2-dev portaudio19-dev pulseaudio pulseaudio-utils alsa-utils
-
-# Step 2: Restart PulseAudio
+# Step 1: Restart PulseAudio (in case it's stuck)
 log "Restarting PulseAudio..."
 pulseaudio --kill 2>/dev/null || true
 sleep 2
 pulseaudio --start
 
-# Step 3: Add user to audio group
-log "Adding user to audio group..."
-sudo usermod -a -G audio $USER
-
-# Step 4: Detect audio devices
+# Step 2: Detect audio devices
 log "Detecting audio devices..."
 echo
 echo "=== Available Playback Devices ==="
@@ -65,7 +56,7 @@ echo "=== Available Recording Devices ==="
 arecord -l || warn "No recording devices found"
 echo
 
-# Step 5: Find Sound Blaster device
+# Step 3: Find Sound Blaster device
 log "Looking for Sound Blaster device..."
 SOUND_BLASTER_CARD=""
 SOUND_BLASTER_DEVICE=""
@@ -107,7 +98,7 @@ fi
 ALSA_DEVICE="hw:${SOUND_BLASTER_CARD},${SOUND_BLASTER_DEVICE}"
 log "Using ALSA device: $ALSA_DEVICE"
 
-# Step 6: Configure ALSA default device
+# Step 4: Configure ALSA default device
 log "Configuring ALSA default device..."
 cat > ~/.asoundrc << EOF
 # ALSA configuration for DMX Light Show
@@ -141,7 +132,7 @@ EOF
 
 success "Created ~/.asoundrc configuration"
 
-# Step 7: Test audio recording
+# Step 5: Test audio recording
 log "Testing audio recording..."
 TEST_FILE="/tmp/lightshow_audio_test.wav"
 
@@ -188,7 +179,7 @@ else
     done
 fi
 
-# Step 8: Update config.yaml
+# Step 6: Update config.yaml
 log "Updating config.yaml with detected audio device..."
 CONFIG_FILE="config.yaml"
 
@@ -205,7 +196,7 @@ else
     warn "config.yaml not found in current directory"
 fi
 
-# Step 9: Test Python audio access
+# Step 7: Test Python audio access
 log "Testing Python sounddevice access..."
 if command -v python3 >/dev/null; then
     if python3 -c "
@@ -239,7 +230,7 @@ else
     warn "Python3 not found"
 fi
 
-# Step 10: Display summary
+# Step 8: Display summary
 echo
 echo "╔════════════════════════════════════════╗"
 echo "║              SETUP SUMMARY             ║"
