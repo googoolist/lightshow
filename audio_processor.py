@@ -74,94 +74,123 @@ class AudioProcessor:
         self.audio_stream = None
         self._setup_audio_device()
     
+    def _probe_audio_device(self, device_id, device_info, test_channels):
+        """Test if a specific audio device actually works."""
+        try:
+            # Quick compatibility check
+            sd.check_input_settings(
+                device=device_id,
+                channels=test_channels,
+                samplerate=self.sample_rate
+            )
+            
+            # Actually try to record for 0.1 seconds
+            import numpy as np
+            test_data = sd.rec(
+                int(0.1 * self.sample_rate),
+                samplerate=self.sample_rate,
+                channels=test_channels,
+                device=device_id,
+                dtype=np.float32
+            )
+            sd.wait()
+            
+            # Check if we got actual audio data
+            max_level = np.max(np.abs(test_data))
+            logger.info(f"  Test recording: max level {max_level:.4f}")
+            
+            return True, test_channels
+            
+        except Exception as e:
+            logger.warning(f"  Device test failed: {e}")
+            return False, 0
+
     def _setup_audio_device(self):
-        """Find and configure audio device with Pipewire support."""
+        """Robustly find and test audio devices until we find one that works."""
         try:
             devices = sd.query_devices()
-            device_id = None
+            logger.info("=== AUDIO DEVICE DETECTION ===")
             
-            logger.info("Scanning for audio devices...")
-            logger.info(f"Looking for device: '{self.config['device_name']}' with {self.input_channels} input channels")
-            
-            # Log all available devices for debugging
-            logger.info("Available audio devices:")
+            # Strategy 1: Look for Sound Blaster devices first
+            sound_blaster_candidates = []
             for i, device in enumerate(devices):
-                is_default_input = (i == sd.default.device[0])
-                default_str = " (DEFAULT INPUT)" if is_default_input else ""
-                logger.info(f"  Device {i}: {device['name']} (inputs: {device['max_input_channels']}){default_str}")
+                if device['max_input_channels'] == 0:
+                    continue
+                    
+                device_name_lower = device['name'].lower()
+                is_sound_blaster = any(term in device_name_lower for term in 
+                                     ['sound blaster', 'creative', 'blaster', 's3'])
+                
+                if is_sound_blaster:
+                    sound_blaster_candidates.append((i, device))
+                    logger.info(f"Found Sound Blaster candidate: {i} - {device['name']} (inputs: {device['max_input_channels']})")
             
-            # Handle different device name formats
-            device_name = self.config['device_name']
+            # Strategy 2: Test Sound Blaster devices
+            for device_id, device_info in sound_blaster_candidates:
+                logger.info(f"Testing Sound Blaster device {device_id}: {device_info['name']}")
+                
+                # Try with stereo first, then mono
+                for test_channels in [2, 1]:
+                    if test_channels <= device_info['max_input_channels']:
+                        success, working_channels = self._probe_audio_device(device_id, device_info, test_channels)
+                        if success:
+                            self.device_id = device_id
+                            self.input_channels = working_channels
+                            logger.info(f"✓ SUCCESS: Using Sound Blaster device {device_id} with {working_channels} channels")
+                            return
             
-            # If device_name is "default", use the system default
-            if device_name == 'default':
-                device_id = None  # Use sounddevice default
-                logger.info("Using system default audio device")
-            elif device_name.startswith('hw:'):
-                # ALSA device string - find corresponding sounddevice index
-                logger.info(f"Looking for ALSA device: {device_name}")
-                # Extract card number from hw:X,Y format
+            # Strategy 3: If no Sound Blaster works, try all other input devices
+            logger.info("No working Sound Blaster found, testing all input devices...")
+            other_candidates = []
+            for i, device in enumerate(devices):
+                if device['max_input_channels'] == 0:
+                    continue
+                if i not in [sb[0] for sb in sound_blaster_candidates]:
+                    other_candidates.append((i, device))
+                    logger.info(f"Found other input device: {i} - {device['name']} (inputs: {device['max_input_channels']})")
+            
+            for device_id, device_info in other_candidates:
+                logger.info(f"Testing device {device_id}: {device_info['name']}")
+                
+                for test_channels in [2, 1]:
+                    if test_channels <= device_info['max_input_channels']:
+                        success, working_channels = self._probe_audio_device(device_id, device_info, test_channels)
+                        if success:
+                            self.device_id = device_id
+                            self.input_channels = working_channels
+                            logger.info(f"✓ SUCCESS: Using device {device_id} with {working_channels} channels")
+                            return
+            
+            # Strategy 4: Last resort - try system default
+            logger.info("Testing system default device...")
+            for test_channels in [2, 1]:
                 try:
-                    card_num = int(device_name.split(':')[1].split(',')[0])
-                    logger.info(f"Looking for card {card_num} devices")
+                    import numpy as np
+                    test_data = sd.rec(
+                        int(0.1 * self.sample_rate),
+                        samplerate=self.sample_rate,
+                        channels=test_channels,
+                        dtype=np.float32
+                    )
+                    sd.wait()
                     
-                    # Find devices that might correspond to this card
-                    for i, device in enumerate(devices):
-                        device_name_lower = device['name'].lower()
-                        # Look for Sound Blaster or card-related names
-                        if (any(term in device_name_lower for term in ['sound blaster', 'creative', 'blaster', 's3']) 
-                            and device['max_input_channels'] >= self.input_channels):
-                            device_id = i
-                            logger.info(f"Found Sound Blaster device: {device['name']} (ID: {i})")
-                            break
+                    self.device_id = None
+                    self.input_channels = test_channels
+                    logger.info(f"✓ SUCCESS: Using system default with {test_channels} channels")
+                    return
                     
-                    if device_id is None:
-                        logger.warning(f"Could not find device for {device_name}")
-                        device_id = None
-                        
-                except (ValueError, IndexError):
-                    logger.warning(f"Invalid ALSA device format: {device_name}")
-                    device_id = None
-            else:
-                # Find specific device by name
-                search_terms = [
-                    device_name.lower(),
-                    'sound blaster',
-                    'creative',
-                    'blaster'
-                ]
-                
-                for i, device in enumerate(devices):
-                    device_name_lower = device['name'].lower()
-                    
-                    # Check if any search term matches and device has input channels
-                    for search_term in search_terms:
-                        if search_term in device_name_lower and device['max_input_channels'] >= self.input_channels:
-                            device_id = i
-                            logger.info(f"Found matching device: {device['name']} (ID: {i})")
-                            break
-                    
-                    if device_id is not None:
-                        break
-                
-                if device_id is None:
-                    logger.warning(f"Specific device '{device_name}' not found")
-                    logger.info("Falling back to system default device")
-                    device_id = None  # Use default
+                except Exception as e:
+                    logger.warning(f"Default device test failed with {test_channels} channels: {e}")
             
-            self.device_id = device_id
-            
-            # Log final device selection
-            if device_id is None:
-                logger.info("Will use system default audio device")
-            else:
-                selected_device = devices[device_id]
-                logger.info(f"Selected device: {selected_device['name']} (ID: {device_id})")
+            # If we get here, nothing worked
+            raise Exception("No working audio input device found")
                 
         except Exception as e:
-            logger.error(f"Error setting up audio device: {e}")
-            logger.info("Falling back to system default")
+            logger.error(f"Audio device setup failed: {e}")
+            # Final fallback
             self.device_id = None
+            self.input_channels = 2
+            logger.info("Using fallback settings - audio may not work")
     
     def _audio_callback(self, indata, frames, time, status):
         """Callback function for audio stream."""
@@ -255,6 +284,37 @@ class AudioProcessor:
             self.processing_thread.join()
         
         logger.info("Audio processing stopped")
+    
+    def get_status(self):
+        """Get current audio processing status including device info."""
+        status = {
+            'status': 'running' if self.running else 'stopped',
+            'volume': self.current_volume if self.running else 0.0,
+            'tempo': self.current_tempo if self.running else 0,
+            'beat_detected': self.beat_detected if self.running else False
+        }
+        
+        if self.running:
+            status['last_beat'] = self.last_beat_time
+            
+        # Add device information
+        try:
+            if self.device_id is None:
+                status['device'] = 'System Default'
+            else:
+                devices = sd.query_devices()
+                device_info = devices[self.device_id]
+                status['device'] = f"{device_info['name']} (ID: {self.device_id})"
+            
+            status['channels'] = self.input_channels
+            status['sample_rate'] = self.sample_rate
+            
+        except Exception:
+            status['device'] = 'Unknown'
+            status['channels'] = self.input_channels
+            status['sample_rate'] = self.sample_rate
+            
+        return status
     
     def _processing_loop(self):
         """Main processing loop for audio analysis."""

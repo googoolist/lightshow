@@ -2,10 +2,10 @@
 
 # Audio Input Settings
 audio:
-  device_name: "hw:2,0"  # Direct ALSA access to Sound Blaster
+  device_name: "auto"  # Auto-detect best working audio device
   sample_rate: 44100
   buffer_size: 2048  # Increased for Raspberry Pi stability
-  input_channels: 2  # Stereo input
+  input_channels: 2  # Will be auto-adjusted based on device capabilities
 
 # DMX Settings
 dmx:
