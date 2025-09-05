@@ -2,7 +2,7 @@
 
 # Audio Input Settings
 audio:
-  device_name: "default"  # Use Pipewire default device
+  device_name: "hw:2,0"  # Direct ALSA access to Sound Blaster
   sample_rate: 44100
   buffer_size: 2048  # Increased for Raspberry Pi stability
   input_channels: 2  # Stereo input

@@ -175,24 +175,31 @@ class AudioProcessor:
         
         self.running = True
         
-        # Start audio stream with Pipewire-compatible settings
+        # Start audio stream with ALSA direct access
+        device_to_use = self.device_id
+        
+        # If device_name contains "hw:", use it directly as string
+        if isinstance(self.config.get('device_name'), str) and self.config['device_name'].startswith('hw:'):
+            device_to_use = self.config['device_name']
+            logger.info(f"Using direct ALSA device: {device_to_use}")
+        
         try:
-            # First try with Pipewire-optimized settings
+            # Try with direct ALSA device
             self.audio_stream = sd.InputStream(
-                device=self.device_id,
+                device=device_to_use,
                 channels=self.input_channels,
                 samplerate=self.sample_rate,
                 blocksize=self.buffer_size,
                 callback=self._audio_callback,
                 dtype=np.float32,
-                latency='high'  # Use higher latency for Pipewire compatibility
+                latency='high'
             )
-            logger.info("Created audio stream with Pipewire-optimized settings")
+            logger.info(f"Created audio stream with device: {device_to_use}")
         except Exception as e:
-            logger.warning(f"Failed to create optimized audio stream: {e}")
-            logger.info("Trying with basic Pipewire settings...")
+            logger.warning(f"Failed to create audio stream with {device_to_use}: {e}")
+            logger.info("Trying with device index...")
             try:
-                # Fallback to basic Pipewire settings
+                # Fallback to device index
                 self.audio_stream = sd.InputStream(
                     device=self.device_id,
                     channels=self.input_channels,
@@ -201,18 +208,19 @@ class AudioProcessor:
                     callback=self._audio_callback,
                     dtype=np.float32
                 )
-                logger.info("Created audio stream with basic Pipewire settings")
+                logger.info(f"Created audio stream with device index: {self.device_id}")
             except Exception as e2:
-                logger.warning(f"Failed with basic settings: {e2}")
-                logger.info("Trying with minimal settings...")
-                # Last resort - minimal settings
+                logger.warning(f"Failed with device index: {e2}")
+                logger.info("Trying with system default...")
+                # Last resort - system default
                 self.audio_stream = sd.InputStream(
-                    device=None,  # Use absolute default
-                    channels=2,   # Force stereo
-                    samplerate=44100,  # Force standard rate
-                    callback=self._audio_callback
+                    device=None,
+                    channels=2,
+                    samplerate=44100,
+                    callback=self._audio_callback,
+                    dtype=np.float32
                 )
-                logger.info("Created audio stream with minimal default settings")
+                logger.info("Created audio stream with system default")
         
         self.audio_stream.start()
         
