@@ -64,6 +64,7 @@ class AudioProcessor:
         device_id = None
         
         logger.info("Scanning for audio devices...")
+        logger.info(f"Looking for device matching: '{self.config['device_name']}' with {self.input_channels} input channels")
         
         # Log all available devices for debugging
         for i, device in enumerate(devices):
@@ -79,13 +80,19 @@ class AudioProcessor:
         
         for i, device in enumerate(devices):
             device_name_lower = device['name'].lower()
+            logger.info(f"Checking device {i}: '{device['name']}' (inputs: {device['max_input_channels']}, need: {self.input_channels})")
             
             # Check if any search term matches and device has input channels
             for search_term in search_terms:
-                if search_term in device_name_lower and device['max_input_channels'] >= self.input_channels:
-                    device_id = i
-                    logger.info(f"Found audio device: {device['name']} (matched: '{search_term}')")
-                    break
+                logger.info(f"  Testing search term: '{search_term}' in '{device_name_lower}'")
+                if search_term in device_name_lower:
+                    logger.info(f"  Name match found! Checking input channels: {device['max_input_channels']} >= {self.input_channels}")
+                    if device['max_input_channels'] >= self.input_channels:
+                        device_id = i
+                        logger.info(f"Successfully found audio device: {device['name']} (matched: '{search_term}')")
+                        break
+                    else:
+                        logger.warning(f"  Device '{device['name']}' matches name but has insufficient input channels ({device['max_input_channels']} < {self.input_channels})")
             else:
                 # This continue is only executed if the inner loop didn't break
                 continue
