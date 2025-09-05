@@ -177,6 +177,71 @@ if [[ ! -e "/dev/snd/controlC${SOUND_BLASTER_CARD}" ]]; then
     exit 1
 fi
 
+# Check if device is in use by other processes
+log "Checking for conflicting processes..."
+AUDIO_DEVICES="/dev/snd/pcmC${SOUND_BLASTER_CARD}D${SOUND_BLASTER_DEVICE}c /dev/snd/controlC${SOUND_BLASTER_CARD}"
+
+for device in $AUDIO_DEVICES; do
+    if [[ -e "$device" ]]; then
+        USING_PROCESSES=$(fuser "$device" 2>/dev/null || true)
+        if [[ -n "$USING_PROCESSES" ]]; then
+            warn "Device $device is being used by processes: $USING_PROCESSES"
+            
+            # Show details of what's using it
+            log "Processes using audio device:"
+            lsof "$device" 2>/dev/null || fuser -v "$device" 2>/dev/null || true
+            
+            echo
+            warn "The audio device is busy. Common solutions:"
+            echo "  1. Stop PulseAudio: pulseaudio --kill"
+            echo "  2. Stop other audio applications"
+            echo "  3. Reboot to clear all audio processes"
+            echo
+            
+            echo "Detected audio services:"
+            ps aux | grep -E "(pipewire|pulseaudio)" | grep -v grep || true
+            echo
+            
+            read -p "Would you like to try stopping audio services and continue? (y/n): " stop_audio
+            if [[ $stop_audio =~ ^[Yy]$ ]]; then
+                log "Stopping audio services..."
+                
+                # Stop Pipewire services
+                systemctl --user stop pipewire pipewire-pulse pipewire-media-session wireplumber 2>/dev/null || true
+                
+                # Stop PulseAudio
+                pulseaudio --kill 2>/dev/null || true
+                
+                # Kill any remaining audio processes
+                sudo killall pipewire pipewire-pulse pulseaudio 2>/dev/null || true
+                
+                sleep 5
+                log "Waiting for processes to release device..."
+                sleep 2
+                
+                # Check if devices are now free
+                STILL_BUSY=""
+                for device in $AUDIO_DEVICES; do
+                    if [[ -e "$device" ]]; then
+                        USING_PROCESSES=$(fuser "$device" 2>/dev/null || true)
+                        if [[ -n "$USING_PROCESSES" ]]; then
+                            STILL_BUSY="yes"
+                        fi
+                    fi
+                done
+                
+                if [[ -n "$STILL_BUSY" ]]; then
+                    warn "Device still busy. You may need to reboot to clear all audio processes."
+                    echo "Or try: sudo fuser -k /dev/snd/*"
+                fi
+            else
+                error "Cannot proceed while device is busy"
+                exit 1
+            fi
+        fi
+    fi
+done
+
 # Show device capabilities
 log "Checking device capabilities..."
 arecord -D "$ALSA_DEVICE" --dump-hw-params 2>/dev/null || warn "Could not query hardware parameters"
