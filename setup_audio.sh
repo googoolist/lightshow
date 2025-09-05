@@ -62,9 +62,15 @@ SOUND_BLASTER_CARD=""
 SOUND_BLASTER_DEVICE=""
 SOUND_BLASTER_NAME=""
 
+# Show current audio devices first
+echo "Current audio recording devices:"
+arecord -l 2>/dev/null
+echo
+
 # Parse arecord output to find Sound Blaster
 while IFS= read -r line; do
-    if [[ $line == *"Sound Blaster"* ]] || [[ $line == *"Creative"* ]]; then
+    log "Checking line: $line"
+    if [[ $line == *"Sound Blaster"* ]] || [[ $line == *"Creative"* ]] || [[ $line == *"S3"* ]]; then
         # Extract card and device numbers
         if [[ $line =~ card\ ([0-9]+):.*device\ ([0-9]+): ]]; then
             SOUND_BLASTER_CARD="${BASH_REMATCH[1]}"
@@ -76,6 +82,16 @@ while IFS= read -r line; do
         fi
     fi
 done < <(arecord -l 2>/dev/null)
+
+# Verify the card exists
+if [[ -n "$SOUND_BLASTER_CARD" ]]; then
+    if [[ ! -e "/dev/snd/controlC${SOUND_BLASTER_CARD}" ]]; then
+        error "Card $SOUND_BLASTER_CARD detected but control device not found!"
+        error "This usually means the device was just unplugged/replugged."
+        echo "Try unplugging and replugging your Sound Blaster, then run this script again."
+        exit 1
+    fi
+fi
 
 if [[ -z "$SOUND_BLASTER_CARD" ]]; then
     warn "Sound Blaster device not found in recording devices"
@@ -248,15 +264,31 @@ echo "Hardware parameters for $ALSA_DEVICE:"
 arecord -D "$ALSA_DEVICE" --dump-hw-params 2>&1 || warn "Could not query hardware parameters"
 echo
 
-# Try to detect supported channels
-log "Detecting supported channel configurations..."
+# Try to detect supported channels and formats
+log "Detecting supported channel and format configurations..."
 SUPPORTED_CHANNELS=""
-for channels in 1 2; do
-    if arecord -D "$ALSA_DEVICE" -c "$channels" -f S16_LE -r 44100 -t wav -d 0.1 /dev/null 2>/dev/null; then
-        SUPPORTED_CHANNELS="$SUPPORTED_CHANNELS $channels"
-        success "Device supports $channels channel(s)"
+WORKING_FORMAT="S16_LE"
+
+# Test supported formats first
+for format in S16_LE S24_3LE; do
+    log "Testing format: $format"
+    if arecord -D "$ALSA_DEVICE" -c 2 -f "$format" -r 44100 -t wav -d 0.1 /dev/null 2>/dev/null; then
+        WORKING_FORMAT="$format"
+        success "Format $format works"
+        break
     else
-        log "Device does not support $channels channel(s)"
+        log "Format $format failed"
+    fi
+done
+
+# Test supported channels with the working format
+for channels in 2 1; do  # Try stereo first, then mono
+    log "Testing $channels channel(s) with format $WORKING_FORMAT"
+    if arecord -D "$ALSA_DEVICE" -c "$channels" -f "$WORKING_FORMAT" -r 44100 -t wav -d 0.1 /dev/null 2>/dev/null; then
+        SUPPORTED_CHANNELS="$SUPPORTED_CHANNELS $channels"
+        success "Device supports $channels channel(s) with $WORKING_FORMAT format"
+    else
+        log "Device does not support $channels channel(s) with $WORKING_FORMAT format"
     fi
 done
 
@@ -274,8 +306,8 @@ echo "Please make some noise or play music during this test..."
 sleep 2
 
 # Test recording with detected channel configuration
-log "Attempting recording with detected settings (${WORKING_CHANNELS} channels)..."
-if arecord -D "$ALSA_DEVICE" -c "$WORKING_CHANNELS" -f S16_LE -r 44100 -t wav -d 3 "$TEST_FILE" 2>&1; then
+log "Attempting recording with detected settings (${WORKING_CHANNELS} channels, ${WORKING_FORMAT} format)..."
+if arecord -D "$ALSA_DEVICE" -c "$WORKING_CHANNELS" -f "$WORKING_FORMAT" -r 44100 -t wav -d 3 "$TEST_FILE" 2>&1; then
     success "Audio recording successful!"
     
     # Check if file has content
