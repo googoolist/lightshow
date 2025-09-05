@@ -148,6 +148,15 @@ class AudioProcessor:
             # Show ALSA vs sounddevice comparison
             self._run_alsa_diagnostics()
             
+            # Run the PyAudio device index check from Stack Overflow
+            logger.info("=== PYAUDIO-STYLE DEVICE INDEX CHECK ===")
+            try:
+                for i in range(len(sd.query_devices())):
+                    dev = sd.query_devices(i)
+                    logger.info(f"Index {i}: {dev['name']} (inputs: {dev['max_input_channels']})")
+            except Exception as e:
+                logger.warning(f"Device index check failed: {e}")
+            
             # Get all sounddevice devices
             devices = sd.query_devices()
             logger.info("=== SOUNDDEVICE DEVICE ANALYSIS ===")
@@ -322,37 +331,54 @@ class AudioProcessor:
         
         self.running = True
         
-        # Start audio stream using device ID
+        # Start audio stream using device ID (Stack Overflow approach)
         try:
-            # Try with detected device ID
-            self.audio_stream = sd.InputStream(
-                device=self.device_id,
-                channels=self.input_channels,
-                samplerate=self.sample_rate,
-                blocksize=self.buffer_size,
-                callback=self._audio_callback,
-                dtype=np.float32,
-                latency='high'
-            )
+            # Try with detected device ID using explicit parameters
+            stream_params = {
+                'channels': self.input_channels,
+                'samplerate': self.sample_rate,
+                'blocksize': self.buffer_size,
+                'callback': self._audio_callback,
+                'dtype': np.float32
+            }
+            
+            # Add device parameter if we have a specific device
+            if self.device_id is not None:
+                stream_params['device'] = self.device_id
+                logger.info(f"Creating stream with device {self.device_id}")
+            else:
+                logger.info("Creating stream with system default device")
+            
+            self.audio_stream = sd.InputStream(**stream_params)
+            
             device_name = "default" if self.device_id is None else f"device {self.device_id}"
-            logger.info(f"Created audio stream with {device_name}")
+            logger.info(f"✓ Created audio stream with {device_name}")
+            
         except Exception as e:
             logger.warning(f"Failed to create audio stream with device {self.device_id}: {e}")
-            logger.info("Trying with system default...")
+            logger.info("Trying Stack Overflow fallback approach...")
             try:
-                # Fallback to system default
-                self.audio_stream = sd.InputStream(
-                    device=None,
-                    channels=2,
-                    samplerate=44100,
-                    blocksize=2048,
-                    callback=self._audio_callback,
-                    dtype=np.float32
-                )
-                logger.info("Created audio stream with system default")
+                # Stack Overflow approach: minimal parameters with explicit device
+                if self.device_id is not None:
+                    self.audio_stream = sd.InputStream(
+                        device=self.device_id,
+                        channels=min(self.input_channels, 2),
+                        samplerate=44100,
+                        callback=self._audio_callback
+                    )
+                    logger.info(f"✓ Created fallback stream with device {self.device_id}")
+                else:
+                    # Final fallback
+                    self.audio_stream = sd.InputStream(
+                        channels=2,
+                        samplerate=44100,
+                        callback=self._audio_callback
+                    )
+                    logger.info("✓ Created minimal fallback stream")
+                    
             except Exception as e2:
-                logger.error(f"Failed to create any audio stream: {e2}")
-                raise
+                logger.error(f"All audio stream creation attempts failed: {e2}")
+                raise Exception(f"Could not create audio stream: {e2}")
         
         self.audio_stream.start()
         
