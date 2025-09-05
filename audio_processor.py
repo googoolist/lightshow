@@ -504,14 +504,25 @@ class AudioProcessor:
     def _detect_beats(self, audio_data):
         """Detect beats using onset detection."""
         try:
-            # Use librosa for onset detection
-            onset_frames = librosa.onset.onset_detect(
-                y=audio_data,
-                sr=self.sample_rate,
-                hop_length=self.hop_length,
-                threshold=self.onset_threshold,
-                units='frames'
-            )
+            # Use librosa for onset detection (handle different parameter names)
+            try:
+                # Try with newer librosa parameter name
+                onset_frames = librosa.onset.onset_detect(
+                    y=audio_data,
+                    sr=self.sample_rate,
+                    hop_length=self.hop_length,
+                    delta=self.onset_threshold,
+                    units='frames'
+                )
+            except TypeError:
+                # Fallback to older librosa parameter name
+                onset_frames = librosa.onset.onset_detect(
+                    y=audio_data,
+                    sr=self.sample_rate,
+                    hop_length=self.hop_length,
+                    threshold=self.onset_threshold,
+                    units='frames'
+                )
             
             if len(onset_frames) > 0:
                 # Convert frames to time
