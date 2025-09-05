@@ -127,11 +127,16 @@ class AudioProcessor:
         
         try:
             # Convert to mono if stereo, or use mono directly
-            if self.input_channels == 2 and indata.shape[1] >= 2:
+            if self.input_channels == 2 and len(indata.shape) > 1 and indata.shape[1] >= 2:
                 audio_data = np.mean(indata, axis=1)
             else:
                 # Use first channel or mono channel
-                audio_data = indata[:, 0] if len(indata.shape) > 1 else indata
+                audio_data = indata[:, 0] if len(indata.shape) > 1 and indata.shape[1] > 0 else indata.flatten()
+            
+            # Check if we're getting audio data
+            audio_level = np.abs(audio_data).mean()
+            if audio_level > 0.001:  # Only log if we have significant audio
+                logger.debug(f"Audio level: {audio_level:.4f}")
             
             # Add to buffer (skip if processing is behind)
             if len(self.audio_buffer) < self.audio_buffer.maxlen * 0.9:  # Only fill to 90%
@@ -213,6 +218,17 @@ class AudioProcessor:
                                (1 - self.volume_smoothing) * volume)
         
         self.current_volume = volume
+        
+        # Log volume levels periodically for debugging
+        if not hasattr(self, '_last_volume_log'):
+            self._last_volume_log = 0
+        
+        current_time = time.time()
+        if current_time - self._last_volume_log > 3:  # Every 3 seconds
+            logger.info(f"Audio levels - Raw RMS: {rms:.4f}, After gain ({self.volume_gain}x): {volume:.4f}, Smoothed: {self.smoothed_volume:.4f}")
+            if rms < 0.0001:
+                logger.warning("Very low audio levels detected - check audio input source and volume")
+            self._last_volume_log = current_time
     
     def _analyze_frequency_bands(self, audio_data):
         """Analyze power in different frequency bands."""
