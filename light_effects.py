@@ -51,6 +51,17 @@ class LightEffectsEngine:
         self.color_cycle_position = 0
         self.color_cycle_speed = 0.02
         
+        # Ping pong effect state
+        self.ping_pong_position = 0.0
+        self.ping_pong_direction = 1
+        self.ping_pong_speed = 2.0
+        self.ping_pong_color_index = 0
+        
+        # Flash storm effect state
+        self.flash_intensity = 1.5
+        self.flash_random_timer = 0
+        self.flash_color_timer = 0
+        
         logger.info("Light effects engine initialized")
     
     def _initialize_light_states(self):
@@ -110,7 +121,7 @@ class LightEffectsEngine:
     
     def _change_effect_mode(self):
         """Change to a new effect mode."""
-        modes = ['auto', 'pulse', 'chase', 'strobe', 'fade']
+        modes = ['auto', 'pulse', 'chase', 'strobe', 'fade', 'ping_pong', 'flash_storm']
         self.current_mode = random.choice([m for m in modes if m != self.current_mode])
         self.mode_start_time = time.time()
         logger.info(f"Changed effect mode to: {self.current_mode}")
@@ -180,6 +191,10 @@ class LightEffectsEngine:
             self._update_fade_mode(palette, audio_features)
         elif self.current_mode == 'strobe':
             self._update_strobe_mode(palette, audio_features)
+        elif self.current_mode == 'ping_pong':
+            self._update_ping_pong_mode(palette, audio_features)
+        elif self.current_mode == 'flash_storm':
+            self._update_flash_storm_mode(palette, audio_features)
     
     def _update_auto_mode(self, palette: List, freq_powers: Dict):
         """Auto mode: Map frequency bands to different lights."""
@@ -289,6 +304,149 @@ class LightEffectsEngine:
             for light_name in self.target_colors:
                 self.target_colors[light_name] = [0, 0, 0]
     
+    def _update_ping_pong_mode(self, palette: List, audio_features: Dict):
+        """Ping pong mode: Sequential wave effect between lights with color cycling."""
+        light_names = list(self.target_colors.keys())
+        num_lights = len(light_names)
+        
+        if num_lights < 2:
+            return
+        
+        # Update ping pong position based on beat or time
+        if audio_features['beat_detected']:
+            # Move faster on beats
+            speed_multiplier = self.ping_pong_speed * 1.5
+        else:
+            speed_multiplier = self.ping_pong_speed * 0.5
+        
+        # Update position
+        dt = 1.0 / 60.0  # Assuming 60 FPS
+        self.ping_pong_position += self.ping_pong_direction * speed_multiplier * dt
+        
+        # Bounce at ends and change color
+        if self.ping_pong_position >= num_lights - 1:
+            self.ping_pong_position = num_lights - 1
+            self.ping_pong_direction = -1
+            self.ping_pong_color_index = (self.ping_pong_color_index + 1) % len(palette)
+        elif self.ping_pong_position <= 0:
+            self.ping_pong_position = 0
+            self.ping_pong_direction = 1
+            self.ping_pong_color_index = (self.ping_pong_color_index + 1) % len(palette)
+        
+        # Get current color with smooth transitions
+        current_color = palette[self.ping_pong_color_index]
+        next_color = palette[(self.ping_pong_color_index + 1) % len(palette)]
+        
+        # Calculate wave intensity for each light
+        for i, light_name in enumerate(light_names):
+            # Distance from ping pong position
+            distance = abs(i - self.ping_pong_position)
+            
+            # Create a smooth wave effect
+            wave_width = 2.0
+            if distance <= wave_width:
+                # Smooth falloff
+                intensity = math.cos(distance * math.pi / (2 * wave_width)) ** 2
+                
+                # Blend colors based on beat intensity
+                beat_blend = audio_features.get('beat_strength', 0.5) if audio_features['beat_detected'] else 0.2
+                
+                blended_color = [
+                    int(current_color[0] * (1 - beat_blend) + next_color[0] * beat_blend),
+                    int(current_color[1] * (1 - beat_blend) + next_color[1] * beat_blend),
+                    int(current_color[2] * (1 - beat_blend) + next_color[2] * beat_blend)
+                ]
+                
+                self.target_colors[light_name] = [
+                    int(blended_color[0] * intensity),
+                    int(blended_color[1] * intensity),
+                    int(blended_color[2] * intensity)
+                ]
+            else:
+                # Lights outside wave are dim
+                self.target_colors[light_name] = [
+                    int(current_color[0] * 0.1),
+                    int(current_color[1] * 0.1),
+                    int(current_color[2] * 0.1)
+                ]
+    
+    def _update_flash_storm_mode(self, palette: List, audio_features: Dict):
+        """Flash storm mode: Rapid color transitions with smooth fade effects."""
+        current_time = time.time()
+        
+        # Update timers
+        self.flash_random_timer += 1.0 / 60.0  # Assuming 60 FPS
+        self.flash_color_timer += 1.0 / 60.0
+        
+        # Very frequent color changes for rapid transitions
+        color_change_interval = 0.3  # Change every 0.3 seconds
+        if self.flash_color_timer >= color_change_interval:
+            self.flash_color_timer = 0
+            # Change colors for random subset of lights
+            light_names = list(self.target_colors.keys())
+            num_to_change = random.randint(1, len(light_names))
+            lights_to_change = random.sample(light_names, num_to_change)
+            
+            for light_name in lights_to_change:
+                self.target_colors[light_name] = random.choice(palette).copy()
+        
+        # Enhanced beat response with smooth intensity boost
+        if audio_features['beat_detected']:
+            # Smooth intensity boost on beat (no strobing)
+            beat_strength = audio_features.get('beat_strength', 1.0)
+            intensity_boost = 1.0 + (beat_strength * 0.5)  # Max 1.5x intensity
+            
+            # Apply boost to all lights smoothly
+            for light_name in self.target_colors:
+                current_color = self.target_colors[light_name]
+                boosted_color = [
+                    min(255, int(current_color[0] * intensity_boost)),
+                    min(255, int(current_color[1] * intensity_boost)),
+                    min(255, int(current_color[2] * intensity_boost))
+                ]
+                self.target_colors[light_name] = boosted_color
+            
+            # Also trigger color changes on some lights for variety
+            light_names = list(self.target_colors.keys())
+            num_change = random.randint(1, max(1, len(light_names) // 2))
+            change_lights = random.sample(light_names, num_change)
+            
+            for light_name in change_lights:
+                self.target_colors[light_name] = random.choice(palette).copy()
+        
+        # Frequent random color transitions between beats
+        elif self.flash_random_timer >= 0.15:  # Every 150ms
+            self.flash_random_timer = 0
+            
+            # 40% chance of random color change
+            if random.random() < 0.4:
+                light_names = list(self.target_colors.keys())
+                change_light = random.choice(light_names)
+                new_color = random.choice(palette)
+                
+                # Smooth color transition, not a flash
+                self.target_colors[change_light] = new_color.copy()
+        
+        # Dynamic intensity based on volume and tempo
+        volume = audio_features.get('smoothed_volume', 0.5)
+        tempo = audio_features.get('tempo', 120)
+        
+        # Base intensity varies with volume (never goes to zero)
+        base_intensity = 0.4 + (volume * 0.6)  # Range: 0.4 to 1.0
+        
+        # Add subtle tempo-based variation
+        tempo_factor = min(1.2, tempo / 120.0)  # Faster tempo = brighter
+        final_intensity = base_intensity * tempo_factor
+        
+        # Apply smooth intensity scaling to all lights
+        for light_name in self.target_colors:
+            color = self.target_colors[light_name]
+            self.target_colors[light_name] = [
+                int(color[0] * final_intensity),
+                int(color[1] * final_intensity),
+                int(color[2] * final_intensity)
+            ]
+    
     def _apply_color_transitions(self):
         """Apply smooth transitions between current and target colors."""
         for light_name in self.current_colors:
@@ -324,7 +482,7 @@ class LightEffectsEngine:
     
     def set_mode(self, mode: str):
         """Manually set effect mode."""
-        valid_modes = ['auto', 'pulse', 'chase', 'strobe', 'fade']
+        valid_modes = ['auto', 'pulse', 'chase', 'strobe', 'fade', 'ping_pong', 'flash_storm']
         if mode in valid_modes:
             self.current_mode = mode
             self.mode_start_time = time.time()
@@ -341,6 +499,6 @@ class LightEffectsEngine:
             'beat_intensity_boost': self.beat_intensity_boost,
             'transition_speed': self.transition_speed,
             'available_palettes': list(self.color_palettes.keys()),
-            'available_modes': ['auto', 'pulse', 'chase', 'strobe', 'fade']
+            'available_modes': ['auto', 'pulse', 'chase', 'strobe', 'fade', 'ping_pong', 'flash_storm']
         }
 

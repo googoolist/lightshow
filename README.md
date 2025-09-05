@@ -9,9 +9,11 @@ A real-time audio-reactive DMX lighting controller for Raspberry Pi that creates
 - **Beat Detection**: Advanced algorithm to detect beats and rhythm patterns
 - **Volume Analysis**: Dynamic response to audio volume levels
 - **DMX Control**: Full DMX512 protocol support via USB interface
-- **Par Light Support**: Optimized for Par light fixtures
+- **Par Light Support**: Optimized for RGBW Par light fixtures with 10-channel DMX
 - **Smooth Transitions**: Interpolated lighting effects for seamless shows
-- **Configurable**: Easy setup for different light configurations
+- **Graphical User Interface**: Modern dark-themed GUI with real-time monitoring
+- **Multiple Lighting Modes**: Three distinct lighting configurations with smooth switching
+- **Configurable**: Easy setup for different light configurations and effects
 
 ## Hardware Requirements
 
@@ -57,6 +59,16 @@ A real-time audio-reactive DMX lighting controller for Raspberry Pi that creates
 3. Connect your hardware and configure `config.yaml`
 4. Run the application:
    ```bash
+   # Launch with GUI (recommended)
+   python lightshow_launcher.py
+   
+   # Or launch GUI directly
+   python lightshow_ui.py
+   
+   # Or command line only
+   python lightshow_launcher.py --cli
+   
+   # Or original main script
    python main.py
    ```
 
@@ -67,6 +79,40 @@ Edit `config.yaml` to match your setup:
 - DMX universe and channel mappings
 - Light fixture definitions
 - Effect parameters
+- Lighting mode configurations
+
+## Lighting Modes
+
+The application includes three configurable lighting modes accessible via the GUI:
+
+### Mode 1: Classic Auto
+- **Description**: Original auto-reactive lighting with frequency mapping
+- **Behavior**: Maps different frequency bands (bass, mid, treble) to different lights
+- **Color Changes**: Automatic based on tempo and volume
+- **Best For**: General music listening and background ambiance
+
+### Mode 2: Ping Pong Wave
+- **Description**: Sequential light ping pong effect with smooth color cycling
+- **Behavior**: Creates a wave effect that bounces between lights 1 and 4, cycling through colors
+- **Color Changes**: Smooth color transitions after each oscillation
+- **Best For**: Rhythmic music with strong beats
+
+### Mode 3: Rapid Fade
+- **Description**: Rapid color transitions with smooth fade in/out effects
+- **Behavior**: Very frequent color changes with smooth intensity variations (no strobing)
+- **Color Changes**: Rapid, smooth color transitions every 0.3 seconds with beat-responsive intensity
+- **Best For**: High-energy music where you want dynamic colors without harsh flashing
+
+### Customizing Modes
+
+Each mode can be customized in `config.yaml` under the `lighting_modes` section:
+- `name`: Display name in the UI
+- `description`: Description shown under each button
+- `effect_mode`: The lighting algorithm to use
+- `palette`: Color palette selection
+- `transition_speed`: How quickly colors transition
+- `beat_response_strength`: Intensity of beat responses
+- `color_change_probability`: Frequency of automatic color changes
 
 ## Auto-Startup Management
 
