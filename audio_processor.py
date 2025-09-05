@@ -80,16 +80,29 @@ class AudioProcessor:
     def _audio_callback(self, indata, frames, time, status):
         """Callback function for audio stream."""
         if status:
-            logger.warning(f"Audio callback status: {status}")
+            # Only log overflow warnings occasionally to avoid spam
+            if hasattr(status, 'input_overflow') and status.input_overflow:
+                if not hasattr(self, '_last_overflow_warning'):
+                    self._last_overflow_warning = 0
+                current_time = time.time()
+                if current_time - self._last_overflow_warning > 5:  # Only warn every 5 seconds
+                    logger.warning(f"Audio input overflow detected - consider increasing buffer size")
+                    self._last_overflow_warning = current_time
+            elif status:
+                logger.warning(f"Audio callback status: {status}")
         
-        # Convert to mono if stereo
-        if self.input_channels == 2:
-            audio_data = np.mean(indata, axis=1)
-        else:
-            audio_data = indata[:, 0]
-        
-        # Add to buffer
-        self.audio_buffer.extend(audio_data)
+        try:
+            # Convert to mono if stereo
+            if self.input_channels == 2:
+                audio_data = np.mean(indata, axis=1)
+            else:
+                audio_data = indata[:, 0]
+            
+            # Add to buffer (skip if processing is behind)
+            if len(self.audio_buffer) < self.audio_buffer.maxlen * 0.9:  # Only fill to 90%
+                self.audio_buffer.extend(audio_data)
+        except Exception as e:
+            logger.error(f"Error in audio callback: {e}")
     
     def start(self):
         """Start audio processing."""
@@ -98,13 +111,15 @@ class AudioProcessor:
         
         self.running = True
         
-        # Start audio stream
+        # Start audio stream with optimized settings for Raspberry Pi
         self.audio_stream = sd.InputStream(
             device=self.device_id,
             channels=self.input_channels,
             samplerate=self.sample_rate,
             blocksize=self.buffer_size,
-            callback=self._audio_callback
+            callback=self._audio_callback,
+            latency='low',  # Request low latency
+            dtype=np.float32  # Use float32 for better performance
         )
         
         self.audio_stream.start()
