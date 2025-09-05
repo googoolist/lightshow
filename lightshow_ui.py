@@ -354,7 +354,8 @@ class LightShowUI:
                 self.root.after(0, lambda: self._handle_controller_error("Failed to start controller"))
                 
         except Exception as e:
-            self.root.after(0, lambda: self._handle_controller_error(f"Controller error: {e}"))
+            error_msg = f"Controller error: {e}"
+            self.root.after(0, lambda: self._handle_controller_error(error_msg))
     
     def _handle_controller_error(self, error_msg):
         """Handle controller errors in the main thread."""
