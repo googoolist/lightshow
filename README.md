@@ -114,6 +114,124 @@ Each mode can be customized in `config.yaml` under the `lighting_modes` section:
 - `beat_response_strength`: Intensity of beat responses
 - `color_change_probability`: Frequency of automatic color changes
 
+## Troubleshooting
+
+### Audio Issues
+
+**Problem: "PySerial not available - DMX output will be simulated"**
+```bash
+# Install PySerial in virtual environment
+cd ~/lightshow
+source venv/bin/activate
+pip install pyserial
+```
+
+**Problem: "Sound Blaster device not found, using default input"**
+```bash
+# Check if device is detected by system
+lsusb | grep -i "sound\|audio\|creative"
+arecord -l
+
+# If device shows up but not detected, try:
+# 1. Change input_channels from 2 to 1 in config.yaml
+# 2. Or set device_name to "hw:1,0" for direct ALSA access
+```
+
+**Problem: "Audio input overflow" warnings**
+- Increase `buffer_size` in config.yaml from 2048 to 4096
+- Check CPU usage - Pi may be overloaded
+
+**Problem: Volume always 0.00, no beat detection**
+```bash
+# Test audio recording directly
+arecord -D hw:1,0 -f cd -c 1 -t wav -d 3 test.wav
+aplay test.wav
+
+# If silent, check audio routing:
+amixer
+alsamixer
+```
+
+**Problem: "Host API not found" errors**
+```bash
+# Install missing audio dependencies
+sudo apt install -y libasound2-dev portaudio19-dev pulseaudio pulseaudio-utils
+pip uninstall sounddevice
+pip install sounddevice
+```
+
+### DMX Issues
+
+**Problem: "DMX: Not Connected" in GUI**
+```bash
+# Check if DMX interface is detected
+ls /dev/ttyUSB* /dev/ttyACM*
+lsusb | grep -i "ftdi\|serial"
+
+# Check permissions
+ls -la /dev/ttyUSB0
+# Should show group 'dialout' with read/write permissions
+```
+
+**Problem: Lights not responding**
+- Verify DMX addresses: Light 1 = Address 1, Light 2 = Address 11, etc.
+- Set lights to 10-channel mode
+- Check DMX cable connections and termination
+
+### Performance Issues
+
+**Problem: Low FPS, system lag**
+- Reduce audio buffer size
+- Lower DMX refresh rate in config.yaml
+- Close unnecessary applications
+- Consider Pi 4 for better performance
+
+**Problem: Tempo stuck at 120 BPM**
+- Lower `onset_threshold` in config.yaml (try 0.1 or 0.05)
+- Increase audio volume/gain
+- Check that music has clear beats
+- Verify audio input is working (volume > 0)
+
+### Quick Setup Checklist
+
+**For first-time setup on Raspberry Pi:**
+
+1. **Install system dependencies:**
+   ```bash
+   sudo apt install -y libasound2-dev portaudio19-dev pulseaudio pulseaudio-utils alsa-utils
+   ```
+
+2. **Install Python dependencies:**
+   ```bash
+   cd ~/lightshow
+   source venv/bin/activate
+   pip install pyserial  # Often missing
+   pip install -r requirements.txt
+   ```
+
+3. **Set DMX light addresses:**
+   - Light 1: DMX Address 1 (10CH mode)
+   - Light 2: DMX Address 11 (10CH mode)
+   - Light 3: DMX Address 21 (10CH mode)
+   - Light 4: DMX Address 31 (10CH mode)
+
+4. **Test audio input:**
+   ```bash
+   arecord -D hw:1,0 -f cd -c 1 -t wav -d 3 test.wav && aplay test.wav
+   ```
+
+5. **Run with GUI:**
+   ```bash
+   python lightshow_ui.py
+   ```
+
+**Status indicators to check:**
+- ✅ "Audio: Connected" (not "Not Connected")
+- ✅ "DMX: Connected" (not "Not Connected") 
+- ✅ Volume > 0.00 when music is playing
+- ✅ Beat detection working (Beat: True when music has beats)
+- ✅ Tempo changing from 120 BPM when music plays
+
 ## Auto-Startup Management
 
 After installation, the light show is configured to start automatically when you boot your Raspberry Pi. 

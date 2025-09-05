@@ -2,7 +2,7 @@
 
 # Audio Input Settings
 audio:
-  device_name: "Sound Blaster"  # Part of device name to match
+  device_name: "hw:1,0"  # Direct ALSA device (change to match your aplay -l output)
   sample_rate: 44100
   buffer_size: 2048  # Increased for Raspberry Pi stability
   input_channels: 1  # Changed to 1 for better device compatibility

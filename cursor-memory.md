@@ -78,6 +78,7 @@ Created a complete audio-reactive DMX lighting controller for Raspberry Pi that 
 - ALSA/PulseAudio for USB audio support
 - FTDI drivers for DMX USB interfaces
 - Python 3.8+ with pip
+- **Critical Raspberry Pi packages**: libasound2-dev, portaudio19-dev, pulseaudio, pulseaudio-utils
 
 ### Automated Installation
 - Created comprehensive `install.sh` script
@@ -85,6 +86,33 @@ Created a complete audio-reactive DMX lighting controller for Raspberry Pi that 
 - Udev rules setup for USB device permissions
 - Systemd service configuration for auto-start
 - **Auto-startup functionality**: Service starts automatically on boot with proper hardware detection
+- **Missing dependency**: PySerial was not included in requirements.txt (now added)
+
+### Manual Installation Steps for Raspberry Pi
+1. **Audio system setup**:
+   ```bash
+   sudo apt update
+   sudo apt install -y libasound2-dev portaudio19-dev pulseaudio pulseaudio-utils alsa-utils
+   ```
+
+2. **Python environment**:
+   ```bash
+   cd ~/lightshow
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+3. **Audio user permissions**:
+   ```bash
+   sudo usermod -a -G audio $USER
+   ```
+
+4. **Test audio devices**:
+   ```bash
+   aplay -l
+   arecord -l
+   ```
 
 ### Testing Framework
 - Comprehensive `test_system.py` for validation
@@ -128,6 +156,37 @@ Created a complete audio-reactive DMX lighting controller for Raspberry Pi that 
 - **Issue**: False beat detection in noisy environments
 - **Solution**: Adjustable onset threshold and noise floor
 - **Workaround**: Use external noise gate or better audio positioning
+
+### GUI Threading Issues
+- **Issue**: Signal handlers can only be set in main thread, causing GUI crashes
+- **Solution**: Created separate controller initialization for GUI with disabled signal handling
+- **Implementation**: Modified lightshow_ui.py to temporarily disable signal setup during controller creation
+
+### Audio Device Detection and Channel Configuration
+- **Issue**: USB audio devices often report fewer input channels than expected
+- **Solution**: Changed from 2-channel to 1-channel default configuration for better compatibility
+- **Workaround**: Flexible audio callback handling for both mono and stereo inputs
+
+### DMX Channel Mapping Updates
+- **Issue**: Transition from 6-channel to 10-channel RGBW PAR lights caused "intensity" channel errors
+- **Solution**: Updated DMX controller to check both 'intensity' and 'master_dimmer' channel names
+- **Implementation**: Backward-compatible channel mapping in dmx_controller.py
+
+### Audio Input Overflow
+- **Issue**: Raspberry Pi audio buffer overflow warnings causing log spam
+- **Solution**: Increased buffer size from 1024 to 2048 samples and throttled overflow warnings
+- **Optimization**: Added buffer fill protection (90% max) and improved callback error handling
+
+### PortAudio/ALSA Compatibility
+- **Issue**: "Host API not found" errors on Raspberry Pi with certain audio configurations
+- **Solution**: Added fallback audio stream creation with basic settings when optimized settings fail
+- **Dependencies**: Requires libasound2-dev, portaudio19-dev, and pulseaudio packages
+
+### Tempo Detection Stuck at 120 BPM
+- **Issue**: Beat detection algorithm not finding beats, causing tempo to remain at default 120 BPM
+- **Solution**: Lowered onset threshold from 0.3 to 0.15 for better sensitivity
+- **Debugging**: Added comprehensive logging for beat detection and tempo calculation
+- **Root Cause**: Often caused by insufficient audio input levels or wrong audio device
 
 ## UI Implementation
 
