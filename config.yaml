@@ -5,7 +5,7 @@ audio:
   device_name: "Sound Blaster"  # Part of device name to match
   sample_rate: 44100
   buffer_size: 2048  # Increased for Raspberry Pi stability
-  input_channels: 2
+  input_channels: 1  # Changed to 1 for better device compatibility
 
 # DMX Settings
 dmx:

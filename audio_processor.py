@@ -126,11 +126,12 @@ class AudioProcessor:
                 logger.warning(f"Audio callback status: {status}")
         
         try:
-            # Convert to mono if stereo
-            if self.input_channels == 2:
+            # Convert to mono if stereo, or use mono directly
+            if self.input_channels == 2 and indata.shape[1] >= 2:
                 audio_data = np.mean(indata, axis=1)
             else:
-                audio_data = indata[:, 0]
+                # Use first channel or mono channel
+                audio_data = indata[:, 0] if len(indata.shape) > 1 else indata
             
             # Add to buffer (skip if processing is behind)
             if len(self.audio_buffer) < self.audio_buffer.maxlen * 0.9:  # Only fill to 90%
