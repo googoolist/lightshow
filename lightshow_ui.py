@@ -343,7 +343,14 @@ class LightShowUI:
     def _run_controller(self):
         """Run the light show controller."""
         try:
-            self.controller = LightShowController()
+            # Import here to avoid signal handler issues
+            import yaml
+            from audio_processor import AudioProcessor
+            from dmx_controller import DMXController
+            from light_effects import LightEffectsEngine
+            
+            # Create a simplified controller that doesn't set up signal handlers
+            self.controller = self._create_gui_controller()
             
             # Apply current mode before starting
             self._apply_mode_to_controller(self.current_mode)
@@ -356,6 +363,23 @@ class LightShowUI:
         except Exception as e:
             error_msg = f"Controller error: {e}"
             self.root.after(0, lambda: self._handle_controller_error(error_msg))
+    
+    def _create_gui_controller(self):
+        """Create a controller without signal handlers for GUI use."""
+        from main import LightShowController
+        import signal
+        
+        # Temporarily disable signal setup
+        original_signal = signal.signal
+        signal.signal = lambda sig, handler: None
+        
+        try:
+            controller = LightShowController()
+        finally:
+            # Restore signal function
+            signal.signal = original_signal
+        
+        return controller
     
     def _handle_controller_error(self, error_msg):
         """Handle controller errors in the main thread."""
