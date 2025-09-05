@@ -359,7 +359,11 @@ class AudioProcessor:
                 'blocksize': self.buffer_size,
                 'callback': self._audio_callback,
                 'dtype': np.float32,
-                'latency': 'high'  # High latency for Raspberry Pi stability
+                'latency': 'high',  # High latency for Raspberry Pi stability
+                'extra_settings': {
+                    'never_drop_input': True,  # Prevent input dropping
+                    'prime_output_buffers_using_stream_callback': False
+                }
             }
             
             # Add device parameter if we have a specific device

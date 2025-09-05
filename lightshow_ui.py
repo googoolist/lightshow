@@ -14,8 +14,6 @@ import yaml
 import logging
 from pathlib import Path
 import sys
-import subprocess
-import os
 
 # Import our modules
 from main import LightShowController
@@ -43,9 +41,6 @@ class LightShowUI:
         self.ui_update_thread = None
         self.stop_ui_updates = False
         
-        # Initialize audio system first
-        self._initialize_audio_system()
-        
         # Setup UI
         self._setup_styles()
         self._create_widgets()
@@ -64,157 +59,6 @@ class LightShowUI:
         except Exception as e:
             messagebox.showerror("Config Error", f"Could not load config.yaml: {e}")
             return {}
-    
-    def _initialize_audio_system(self):
-        """Initialize and fix audio system before starting the lightshow."""
-        logger.info("Initializing audio system...")
-        
-        try:
-            # Stop conflicting audio services
-            logger.info("Stopping conflicting audio services...")
-            subprocess.run(['sudo', 'systemctl', 'stop', 'pulseaudio'], 
-                         capture_output=True, timeout=10)
-            subprocess.run(['systemctl', '--user', 'stop', 'pulseaudio'], 
-                         capture_output=True, timeout=10)
-            subprocess.run(['systemctl', '--user', 'stop', 'pipewire'], 
-                         capture_output=True, timeout=10)
-            subprocess.run(['systemctl', '--user', 'stop', 'pipewire-pulse'], 
-                         capture_output=True, timeout=10)
-            
-            time.sleep(2)
-            
-            # Restart audio services
-            logger.info("Restarting audio services...")
-            subprocess.run(['sudo', 'systemctl', 'restart', 'alsa-state'], 
-                         capture_output=True, timeout=10)
-            time.sleep(1)
-            
-            # Start Pipewire
-            subprocess.run(['systemctl', '--user', 'start', 'pipewire'], 
-                         capture_output=True, timeout=10)
-            time.sleep(1)
-            subprocess.run(['systemctl', '--user', 'start', 'pipewire-pulse'], 
-                         capture_output=True, timeout=10)
-            time.sleep(2)
-            
-            # Detect Sound Blaster and get card info
-            result = subprocess.run(['arecord', '-l'], capture_output=True, text=True, timeout=5)
-            card_num = None
-            device_num = None
-            
-            for line in result.stdout.split('\n'):
-                if 'sound blaster' in line.lower() or 'creative' in line.lower() or 's3' in line.lower():
-                    # Extract card and device numbers
-                    import re
-                    card_match = re.search(r'card (\d+):', line)
-                    device_match = re.search(r'device (\d+):', line)
-                    if card_match and device_match:
-                        card_num = card_match.group(1)
-                        device_num = device_match.group(1)
-                        logger.info(f"✓ Sound Blaster detected: card {card_num}, device {device_num}")
-                        break
-            
-            if card_num is None:
-                logger.warning("⚠ Sound Blaster not detected, check USB connection")
-                return
-                
-            # Create proper ALSA configuration
-            logger.info("Creating ALSA configuration...")
-            asoundrc_content = f"""# ALSA configuration for Sound Blaster
-pcm.!default {{
-    type asym
-    capture.pcm "mic"
-    playback.pcm "speaker"
-}}
-
-pcm.mic {{
-    type plug
-    slave {{
-        pcm "hw:{card_num},{device_num}"
-        channels 2
-        rate 44100
-        format S16_LE
-    }}
-}}
-
-pcm.speaker {{
-    type plug
-    slave {{
-        pcm "hw:{card_num},{device_num}"
-        channels 2
-        rate 44100
-        format S16_LE
-    }}
-}}
-
-ctl.!default {{
-    type hw
-    card {card_num}
-}}
-"""
-            
-            # Write ALSA config
-            home_dir = os.path.expanduser('~')
-            asoundrc_path = os.path.join(home_dir, '.asoundrc')
-            
-            # Backup existing config
-            if os.path.exists(asoundrc_path):
-                subprocess.run(['cp', asoundrc_path, f'{asoundrc_path}.backup'], capture_output=True)
-            
-            with open(asoundrc_path, 'w') as f:
-                f.write(asoundrc_content)
-            
-            logger.info(f"Created {asoundrc_path}")
-            
-            # Update lightshow config with detected card
-            try:
-                with open('config.yaml', 'r') as f:
-                    config_data = f.read()
-                
-                # Update device_name to use detected card
-                updated_config = re.sub(
-                    r'device_name: \d+.*',
-                    f'device_name: {card_num}  # Sound Blaster card {card_num} auto-detected',
-                    config_data
-                )
-                
-                with open('config.yaml', 'w') as f:
-                    f.write(updated_config)
-                    
-                logger.info(f"Updated config.yaml with card {card_num}")
-            except Exception as e:
-                logger.warning(f"Could not update config.yaml: {e}")
-            
-            # Test with new configuration
-            time.sleep(1)
-            test_result = subprocess.run([
-                'timeout', '2', 'arecord', '-D', f'hw:{card_num},{device_num}', 
-                '-f', 'S16_LE', '-r', '44100', '-c', '2', '-d', '1', '/tmp/test_audio.wav'
-            ], capture_output=True, timeout=5)
-            
-            if test_result.returncode == 0:
-                logger.info("✓ Audio system test passed")
-                subprocess.run(['rm', '-f', '/tmp/test_audio.wav'], capture_output=True)
-            else:
-                logger.warning("⚠ Audio system test failed")
-                # Try mono as fallback
-                test_mono = subprocess.run([
-                    'timeout', '2', 'arecord', '-D', f'hw:{card_num},{device_num}', 
-                    '-f', 'S16_LE', '-r', '44100', '-c', '1', '-d', '1', '/tmp/test_mono.wav'
-                ], capture_output=True, timeout=5)
-                
-                if test_mono.returncode == 0:
-                    logger.info("✓ Mono audio test passed")
-                    subprocess.run(['rm', '-f', '/tmp/test_mono.wav'], capture_output=True)
-                else:
-                    logger.warning("⚠ Both stereo and mono tests failed")
-            
-            logger.info("Audio system initialization complete")
-            
-        except subprocess.TimeoutExpired:
-            logger.warning("Audio initialization timed out, continuing anyway")
-        except Exception as e:
-            logger.warning(f"Audio initialization error: {e}, continuing anyway")
     
     def _setup_styles(self):
         """Setup modern dark theme styles."""
