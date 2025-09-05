@@ -124,13 +124,15 @@ effects:
 lighting_modes:
   mode_1:
     name: "Classic Auto"
-    description: "Original auto-reactive lighting with frequency mapping"
-    effect_mode: "auto"
+    description: "Smooth tempo-synced transitions at 25% of detected BPM"
+    effect_mode: "tempo_sync"
     palette: "energetic"
     transition_speed: 0.8
     beat_response_strength: 1.2
     color_change_probability: 0.1
     intensity_multiplier: 0.9
+    tempo_fraction: 0.25  # Transition at 25% of detected tempo
+    smooth_transitions: true  # Enable smooth color blending
     
   mode_2:
     name: "Ping Pong Wave"

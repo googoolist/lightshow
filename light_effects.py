@@ -62,6 +62,13 @@ class LightEffectsEngine:
         self.flash_random_timer = 0
         self.flash_color_timer = 0
         
+        # Tempo sync effect state
+        self.tempo_sync_timer = 0
+        self.tempo_sync_color_index = 0
+        self.tempo_fraction = 0.25
+        self.last_tempo_transition = 0
+        self.tempo_transition_interval = 2.0  # Default 2 seconds, updated by tempo
+        
         logger.info("Light effects engine initialized")
     
     def _initialize_light_states(self):
@@ -183,6 +190,8 @@ class LightEffectsEngine:
         
         if self.current_mode == 'auto':
             self._update_auto_mode(palette, freq_powers)
+        elif self.current_mode == 'tempo_sync':
+            self._update_tempo_sync_mode(palette, audio_features)
         elif self.current_mode == 'pulse':
             self._update_pulse_mode(palette, audio_features)
         elif self.current_mode == 'chase':
@@ -447,6 +456,60 @@ class LightEffectsEngine:
                 int(color[2] * final_intensity)
             ]
     
+    def _update_tempo_sync_mode(self, palette: List, audio_features: Dict):
+        """Tempo sync mode: Smooth transitions synchronized to 25% of detected tempo."""
+        current_time = time.time()
+        tempo = audio_features.get('tempo', 120)
+        
+        # Calculate transition interval based on tempo fraction
+        # For 120 BPM: 60/120 = 0.5s per beat, 0.5/0.25 = 2s per transition
+        beats_per_second = tempo / 60.0
+        self.tempo_transition_interval = 1.0 / (beats_per_second * self.tempo_fraction)
+        
+        # Check if it's time for a tempo-based transition
+        time_since_last = current_time - self.last_tempo_transition
+        if time_since_last >= self.tempo_transition_interval:
+            self.last_tempo_transition = current_time
+            
+            # Advance to next color in palette
+            self.tempo_sync_color_index = (self.tempo_sync_color_index + 1) % len(palette)
+            next_color = palette[self.tempo_sync_color_index]
+            
+            logger.debug(f"Tempo sync transition: tempo={tempo:.1f} BPM, interval={self.tempo_transition_interval:.2f}s, color_index={self.tempo_sync_color_index}")
+            
+            # Apply the new color to all lights for synchronized effect
+            for light_name in self.target_colors:
+                self.target_colors[light_name] = next_color.copy()
+        
+        # Add frequency-based intensity modulation while maintaining color sync
+        freq_powers = audio_features['frequency_powers']
+        bass_power = freq_powers.get('bass', 0)
+        mid_power = freq_powers.get('mid', 0)
+        treble_power = freq_powers.get('treble', 0)
+        
+        # Calculate overall audio energy
+        audio_energy = (bass_power + mid_power + treble_power) / 3.0
+        
+        # Base intensity with smooth audio response
+        base_intensity = 0.3 + (audio_energy * 0.7)  # Range: 0.3 to 1.0
+        
+        # Add subtle beat response boost
+        beat_boost = 0.0
+        if audio_features['beat_detected']:
+            beat_strength = audio_features.get('beat_strength', 1.0)
+            beat_boost = beat_strength * self.beat_response_strength * 0.2  # Gentle boost
+        
+        final_intensity = min(1.0, base_intensity + beat_boost)
+        
+        # Apply smooth intensity scaling to all lights (maintains color sync)
+        for light_name in self.target_colors:
+            color = self.target_colors[light_name]
+            self.target_colors[light_name] = [
+                int(color[0] * final_intensity),
+                int(color[1] * final_intensity),
+                int(color[2] * final_intensity)
+            ]
+    
     def _apply_color_transitions(self):
         """Apply smooth transitions between current and target colors."""
         for light_name in self.current_colors:
@@ -480,12 +543,23 @@ class LightEffectsEngine:
         else:
             logger.warning(f"Unknown palette: {palette_name}")
     
-    def set_mode(self, mode: str):
-        """Manually set effect mode."""
-        valid_modes = ['auto', 'pulse', 'chase', 'strobe', 'fade', 'ping_pong', 'flash_storm']
+    def set_mode(self, mode: str, **kwargs):
+        """Manually set effect mode with optional parameters."""
+        valid_modes = ['auto', 'tempo_sync', 'pulse', 'chase', 'strobe', 'fade', 'ping_pong', 'flash_storm']
         if mode in valid_modes:
             self.current_mode = mode
             self.mode_start_time = time.time()
+            
+            # Handle mode-specific parameters
+            if mode == 'tempo_sync':
+                self.tempo_fraction = kwargs.get('tempo_fraction', 0.25)
+                self.last_tempo_transition = time.time()  # Reset timer
+                logger.info(f"Set tempo sync mode with {self.tempo_fraction*100:.0f}% tempo fraction")
+            elif mode == 'ping_pong':
+                self.ping_pong_speed = kwargs.get('ping_pong_speed', 2.0)
+            elif mode == 'flash_storm':
+                self.flash_intensity = kwargs.get('flash_intensity', 1.5)
+            
             logger.info(f"Set effect mode to: {mode}")
         else:
             logger.warning(f"Unknown mode: {mode}")
@@ -499,6 +573,6 @@ class LightEffectsEngine:
             'beat_intensity_boost': self.beat_intensity_boost,
             'transition_speed': self.transition_speed,
             'available_palettes': list(self.color_palettes.keys()),
-            'available_modes': ['auto', 'pulse', 'chase', 'strobe', 'fade', 'ping_pong', 'flash_storm']
+            'available_modes': ['auto', 'tempo_sync', 'pulse', 'chase', 'strobe', 'fade', 'ping_pong', 'flash_storm']
         }
 
