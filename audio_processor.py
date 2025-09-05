@@ -152,15 +152,27 @@ class AudioProcessor:
         self.running = True
         
         # Start audio stream with optimized settings for Raspberry Pi
-        self.audio_stream = sd.InputStream(
-            device=self.device_id,
-            channels=self.input_channels,
-            samplerate=self.sample_rate,
-            blocksize=self.buffer_size,
-            callback=self._audio_callback,
-            latency='low',  # Request low latency
-            dtype=np.float32  # Use float32 for better performance
-        )
+        try:
+            self.audio_stream = sd.InputStream(
+                device=self.device_id,
+                channels=self.input_channels,
+                samplerate=self.sample_rate,
+                blocksize=self.buffer_size,
+                callback=self._audio_callback,
+                latency='low',  # Request low latency
+                dtype=np.float32  # Use float32 for better performance
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create audio stream with optimized settings: {e}")
+            logger.info("Trying with basic settings...")
+            # Fallback to basic settings
+            self.audio_stream = sd.InputStream(
+                device=self.device_id,
+                channels=self.input_channels,
+                samplerate=self.sample_rate,
+                blocksize=self.buffer_size,
+                callback=self._audio_callback
+            )
         
         self.audio_stream.start()
         
