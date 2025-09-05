@@ -86,9 +86,11 @@ class AudioProcessor:
                     device_id = i
                     logger.info(f"Found audio device: {device['name']} (matched: '{search_term}')")
                     break
-            
-            if device_id is not None:
-                break
+            else:
+                # This continue is only executed if the inner loop didn't break
+                continue
+            # If we get here, the inner loop was broken and we found a device
+            break
         
         if device_id is None:
             logger.warning(f"No device matching '{self.config['device_name']}' found")
