@@ -114,91 +114,74 @@ class AudioProcessor:
             return False, 0
 
     def _setup_audio_device(self):
-        """Robustly find and test audio devices until we find one that works."""
+        """Setup audio device using known Sound Blaster card information."""
         try:
             devices = sd.query_devices()
-            logger.info("=== AUDIO DEVICE DETECTION ===")
+            logger.info("=== AUDIO DEVICE SETUP ===")
             
-            # Strategy 1: Look for Sound Blaster devices first
-            sound_blaster_candidates = []
+            # Log all devices for reference
+            logger.info("Available devices:")
+            for i, device in enumerate(devices):
+                logger.info(f"  {i}: {device['name']} (inputs: {device['max_input_channels']})")
+            
+            device_name = self.config['device_name']
+            
+            # If device_name is a number, use it directly as device ID
+            if isinstance(device_name, (int, str)) and str(device_name).isdigit():
+                device_id = int(device_name)
+                logger.info(f"Using specified device ID: {device_id}")
+                
+                # Validate the device exists and has input channels
+                if device_id < len(devices):
+                    device_info = devices[device_id]
+                    if device_info['max_input_channels'] >= self.input_channels:
+                        # Test the device
+                        success, working_channels = self._probe_audio_device(device_id, device_info, self.input_channels)
+                        if success:
+                            self.device_id = device_id
+                            self.input_channels = working_channels
+                            logger.info(f"✓ SUCCESS: Using device {device_id}: {device_info['name']} with {working_channels} channels")
+                            return
+                        else:
+                            logger.warning(f"Device {device_id} test failed, trying mono...")
+                            # Try mono
+                            success, working_channels = self._probe_audio_device(device_id, device_info, 1)
+                            if success:
+                                self.device_id = device_id
+                                self.input_channels = working_channels
+                                logger.info(f"✓ SUCCESS: Using device {device_id}: {device_info['name']} with {working_channels} channels")
+                                return
+                    else:
+                        logger.warning(f"Device {device_id} has insufficient input channels ({device_info['max_input_channels']} < {self.input_channels})")
+                else:
+                    logger.warning(f"Device ID {device_id} is out of range (max: {len(devices)-1})")
+            
+            # If we reach here, the specified device didn't work
+            # Fall back to searching for Sound Blaster
+            logger.info("Specified device failed, searching for Sound Blaster...")
             for i, device in enumerate(devices):
                 if device['max_input_channels'] == 0:
                     continue
                     
                 device_name_lower = device['name'].lower()
-                is_sound_blaster = any(term in device_name_lower for term in 
-                                     ['sound blaster', 'creative', 'blaster', 's3'])
-                
-                if is_sound_blaster:
-                    sound_blaster_candidates.append((i, device))
-                    logger.info(f"Found Sound Blaster candidate: {i} - {device['name']} (inputs: {device['max_input_channels']})")
+                if any(term in device_name_lower for term in ['sound blaster', 'creative', 'blaster', 's3']):
+                    logger.info(f"Found Sound Blaster: {i} - {device['name']}")
+                    success, working_channels = self._probe_audio_device(i, device, 2)
+                    if success:
+                        self.device_id = i
+                        self.input_channels = working_channels
+                        logger.info(f"✓ SUCCESS: Using Sound Blaster device {i} with {working_channels} channels")
+                        return
             
-            # Strategy 2: Test Sound Blaster devices
-            for device_id, device_info in sound_blaster_candidates:
-                logger.info(f"Testing Sound Blaster device {device_id}: {device_info['name']}")
-                
-                # Try with stereo first, then mono
-                for test_channels in [2, 1]:
-                    if test_channels <= device_info['max_input_channels']:
-                        success, working_channels = self._probe_audio_device(device_id, device_info, test_channels)
-                        if success:
-                            self.device_id = device_id
-                            self.input_channels = working_channels
-                            logger.info(f"✓ SUCCESS: Using Sound Blaster device {device_id} with {working_channels} channels")
-                            return
-            
-            # Strategy 3: If no Sound Blaster works, try all other input devices
-            logger.info("No working Sound Blaster found, testing all input devices...")
-            other_candidates = []
-            for i, device in enumerate(devices):
-                if device['max_input_channels'] == 0:
-                    continue
-                if i not in [sb[0] for sb in sound_blaster_candidates]:
-                    other_candidates.append((i, device))
-                    logger.info(f"Found other input device: {i} - {device['name']} (inputs: {device['max_input_channels']})")
-            
-            for device_id, device_info in other_candidates:
-                logger.info(f"Testing device {device_id}: {device_info['name']}")
-                
-                for test_channels in [2, 1]:
-                    if test_channels <= device_info['max_input_channels']:
-                        success, working_channels = self._probe_audio_device(device_id, device_info, test_channels)
-                        if success:
-                            self.device_id = device_id
-                            self.input_channels = working_channels
-                            logger.info(f"✓ SUCCESS: Using device {device_id} with {working_channels} channels")
-                            return
-            
-            # Strategy 4: Last resort - try system default
-            logger.info("Testing system default device...")
-            for test_channels in [2, 1]:
-                try:
-                    import numpy as np
-                    test_data = sd.rec(
-                        int(0.1 * self.sample_rate),
-                        samplerate=self.sample_rate,
-                        channels=test_channels,
-                        dtype=np.float32
-                    )
-                    sd.wait()
-                    
-                    self.device_id = None
-                    self.input_channels = test_channels
-                    logger.info(f"✓ SUCCESS: Using system default with {test_channels} channels")
-                    return
-                    
-                except Exception as e:
-                    logger.warning(f"Default device test failed with {test_channels} channels: {e}")
-            
-            # If we get here, nothing worked
-            raise Exception("No working audio input device found")
+            # Final fallback
+            logger.warning("No Sound Blaster found, using system default")
+            self.device_id = None
+            self.input_channels = 2
                 
         except Exception as e:
             logger.error(f"Audio device setup failed: {e}")
-            # Final fallback
             self.device_id = None
             self.input_channels = 2
-            logger.info("Using fallback settings - audio may not work")
     
     def _audio_callback(self, indata, frames, time, status):
         """Callback function for audio stream."""

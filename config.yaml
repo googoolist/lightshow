@@ -2,10 +2,10 @@
 
 # Audio Input Settings
 audio:
-  device_name: "auto"  # Auto-detect best working audio device
+  device_name: 2  # Sound Blaster Play! 3 card number (card 2, device 0)
   sample_rate: 44100
   buffer_size: 2048  # Increased for Raspberry Pi stability
-  input_channels: 2  # Will be auto-adjusted based on device capabilities
+  input_channels: 2  # Stereo input
 
 # DMX Settings
 dmx:
