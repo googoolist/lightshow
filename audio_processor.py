@@ -291,13 +291,14 @@ class AudioProcessor:
             self.device_id = None
             self.input_channels = 2
     
-    def _audio_callback(self, indata, frames, time, status):
+    def _audio_callback(self, indata, frames, time_info, status):
         """Callback function for audio stream."""
         if status:
             # Only log overflow warnings occasionally to avoid spam
             if hasattr(status, 'input_overflow') and status.input_overflow:
                 if not hasattr(self, '_last_overflow_warning'):
                     self._last_overflow_warning = 0
+                import time
                 current_time = time.time()
                 if current_time - self._last_overflow_warning > 5:  # Only warn every 5 seconds
                     logger.warning(f"Audio input overflow detected - consider increasing buffer size")
