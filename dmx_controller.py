@@ -168,10 +168,12 @@ class DMXController:
         if light.channels['blue']:
             self.dmx_data[light.channels['blue'] - 1] = blue
         
-        # Set intensity if provided and channel exists
-        if intensity is not None and light.channels['intensity']:
-            intensity = max(0, min(255, intensity))
-            self.dmx_data[light.channels['intensity'] - 1] = intensity
+        # Set intensity if provided and channel exists (check both old and new channel names)
+        if intensity is not None:
+            intensity_channel = light.channels.get('intensity') or light.channels.get('master_dimmer')
+            if intensity_channel:
+                intensity = max(0, min(255, intensity))
+                self.dmx_data[intensity_channel - 1] = intensity
         
         # Update light state
         light.current_rgb = (red, green, blue)
@@ -187,8 +189,10 @@ class DMXController:
         light = self.lights[light_name]
         intensity = max(0, min(255, intensity))
         
-        if light.channels['intensity']:
-            self.dmx_data[light.channels['intensity'] - 1] = intensity
+        # Check both old and new channel names for intensity
+        intensity_channel = light.channels.get('intensity') or light.channels.get('master_dimmer')
+        if intensity_channel:
+            self.dmx_data[intensity_channel - 1] = intensity
             light.current_intensity = intensity
     
     def set_light_strobe(self, light_name: str, strobe_speed: int):
