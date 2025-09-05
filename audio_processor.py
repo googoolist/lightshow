@@ -307,21 +307,39 @@ class AudioProcessor:
                 logger.warning(f"Audio callback status: {status}")
         
         try:
-            # Convert to mono if stereo, or use mono directly
-            if self.input_channels == 2 and len(indata.shape) > 1 and indata.shape[1] >= 2:
-                audio_data = np.mean(indata, axis=1)
+            # Fast audio processing for callback efficiency
+            if len(indata) == 0:
+                return
+            
+            # Convert to mono efficiently
+            if self.input_channels == 2 and indata.ndim > 1 and indata.shape[1] >= 2:
+                # Use left channel only (faster than averaging)
+                audio_data = indata[:, 0]
+            elif indata.ndim > 1:
+                audio_data = indata[:, 0] if indata.shape[1] > 0 else indata.flatten()
             else:
-                # Use first channel or mono channel
-                audio_data = indata[:, 0] if len(indata.shape) > 1 and indata.shape[1] > 0 else indata.flatten()
+                audio_data = indata
             
-            # Check if we're getting audio data
-            audio_level = np.abs(audio_data).mean()
-            if audio_level > 0.001:  # Only log if we have significant audio
-                logger.debug(f"Audio level: {audio_level:.4f}")
+            # Quick level check (sample every 10th callback to reduce overhead)
+            if not hasattr(self, '_callback_count'):
+                self._callback_count = 0
+            self._callback_count += 1
             
-            # Add to buffer (skip if processing is behind)
-            if len(self.audio_buffer) < self.audio_buffer.maxlen * 0.9:  # Only fill to 90%
+            if self._callback_count % 10 == 0:
+                audio_level = np.abs(audio_data).mean()
+                if audio_level > 0.001:
+                    logger.debug(f"Audio level: {audio_level:.4f}")
+            
+            # Smart buffer management - only add if buffer isn't too full
+            buffer_usage = len(self.audio_buffer) / self.audio_buffer.maxlen
+            if buffer_usage < 0.8:  # Only fill to 80% to prevent overflow
                 self.audio_buffer.extend(audio_data)
+            elif buffer_usage > 0.95:
+                # Emergency: drop some old data to make room
+                drop_amount = int(self.audio_buffer.maxlen * 0.1)
+                for _ in range(min(drop_amount, len(self.audio_buffer))):
+                    self.audio_buffer.popleft()
+                
         except Exception as e:
             logger.error(f"Error in audio callback: {e}")
     
@@ -334,13 +352,18 @@ class AudioProcessor:
         
         # Start audio stream using device ID (Stack Overflow approach)
         try:
-            # Try with detected device ID using explicit parameters
+            # Try with detected device ID using explicit parameters (optimized for Pi)
             stream_params = {
                 'channels': self.input_channels,
                 'samplerate': self.sample_rate,
                 'blocksize': self.buffer_size,
                 'callback': self._audio_callback,
-                'dtype': np.float32
+                'dtype': np.float32,
+                'latency': 'high',  # High latency for Raspberry Pi stability
+                'extra_settings': {
+                    'never_drop_input': True,  # Prevent input dropping
+                    'prime_output_buffers_using_stream_callback': False
+                }
             }
             
             # Add device parameter if we have a specific device
