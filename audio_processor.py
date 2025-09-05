@@ -28,19 +28,14 @@ logger = logging.getLogger(__name__)
 
 class AudioProcessor:
     def __init__(self, config):
-        # Configure sounddevice for better Raspberry Pi compatibility
+        # Log available host APIs for debugging
         try:
-            # Find ALSA host API if available
             hostapis = sd.query_hostapis()
+            logger.info("Available host APIs:")
             for i, api in enumerate(hostapis):
-                if 'ALSA' in api['name']:
-                    sd.default.hostapi = i
-                    logger.info(f"Set ALSA as default host API (index {i})")
-                    break
-            else:
-                logger.info("ALSA host API not found, using default")
+                logger.info(f"  {i}: {api['name']}")
         except Exception as e:
-            logger.warning(f"Could not configure host API: {e}")
+            logger.warning(f"Could not query host APIs: {e}")
         
         self.config = config['audio']
         self.processing_config = config['audio_processing']
@@ -87,29 +82,32 @@ class AudioProcessor:
     def _probe_audio_device(self, device_id, device_info, test_channels):
         """Test if a specific audio device actually works."""
         try:
-            # Quick compatibility check
+            # Quick compatibility check first
             sd.check_input_settings(
                 device=device_id,
                 channels=test_channels,
                 samplerate=self.sample_rate
             )
             
-            # Actually try to record for 0.1 seconds
+            # Actually try to record for 0.1 seconds with minimal settings
             import numpy as np
             test_data = sd.rec(
                 int(0.1 * self.sample_rate),
                 samplerate=self.sample_rate,
                 channels=test_channels,
                 device=device_id,
-                dtype=np.float32
+                dtype=np.float32,
+                blocking=True  # Ensure we wait for completion
             )
-            sd.wait()
             
             # Check if we got actual audio data
-            max_level = np.max(np.abs(test_data))
-            logger.info(f"  Test recording: max level {max_level:.4f}")
-            
-            return True, test_channels
+            if test_data is not None and len(test_data) > 0:
+                max_level = np.max(np.abs(test_data))
+                logger.info(f"  Test recording: max level {max_level:.4f}")
+                return True, test_channels
+            else:
+                logger.warning("  Test recording returned no data")
+                return False, 0
             
         except Exception as e:
             logger.warning(f"  Device test failed: {e}")
