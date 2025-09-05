@@ -136,11 +136,25 @@ success "Created ~/.asoundrc configuration"
 log "Testing audio recording..."
 TEST_FILE="/tmp/lightshow_audio_test.wav"
 
+# First, check if the device exists and is accessible
+log "Checking device accessibility..."
+if [[ ! -e "/dev/snd/controlC${SOUND_BLASTER_CARD}" ]]; then
+    error "Sound card control device not found: /dev/snd/controlC${SOUND_BLASTER_CARD}"
+    error "Check if device is properly connected and recognized by kernel"
+    exit 1
+fi
+
+# Show device capabilities
+log "Checking device capabilities..."
+arecord -D "$ALSA_DEVICE" --dump-hw-params 2>/dev/null || warn "Could not query hardware parameters"
+
 echo "Recording 3 seconds of audio from $ALSA_DEVICE..."
 echo "Please make some noise or play music during this test..."
 sleep 2
 
-if arecord -D "$ALSA_DEVICE" -f cd -c 1 -t wav -d 3 "$TEST_FILE" 2>/dev/null; then
+# Test recording with verbose error output
+log "Attempting recording with standard CD quality settings..."
+if arecord -D "$ALSA_DEVICE" -f cd -c 1 -t wav -d 3 "$TEST_FILE" 2>&1; then
     success "Audio recording successful!"
     
     # Check if file has content
@@ -163,20 +177,63 @@ if arecord -D "$ALSA_DEVICE" -f cd -c 1 -t wav -d 3 "$TEST_FILE" 2>/dev/null; th
     # Clean up test file
     rm -f "$TEST_FILE"
 else
-    error "Audio recording failed"
-    echo "Trying with different parameters..."
+    error "Audio recording failed with CD quality settings"
+    echo
+    log "Trying different recording parameters..."
     
-    # Try different sample rates and formats
-    for rate in 44100 48000 22050; do
-        for channels in 1 2; do
-            log "Trying ${rate}Hz, ${channels} channel(s)..."
-            if arecord -D "$ALSA_DEVICE" -r "$rate" -c "$channels" -f S16_LE -t wav -d 1 "$TEST_FILE" 2>/dev/null; then
-                success "Recording works with ${rate}Hz, ${channels} channel(s)"
-                rm -f "$TEST_FILE"
-                break 2
+    # Array of different configurations to try
+    declare -a configs=(
+        "44100 1 S16_LE"
+        "48000 1 S16_LE" 
+        "22050 1 S16_LE"
+        "44100 2 S16_LE"
+        "48000 2 S16_LE"
+        "44100 1 U8"
+        "22050 1 U8"
+    )
+    
+    recording_success=false
+    
+    for config in "${configs[@]}"; do
+        read -r rate channels format <<< "$config"
+        log "Trying ${rate}Hz, ${channels} channel(s), ${format} format..."
+        
+        if arecord -D "$ALSA_DEVICE" -r "$rate" -c "$channels" -f "$format" -t wav -d 1 "$TEST_FILE" 2>/dev/null; then
+            success "Recording works with ${rate}Hz, ${channels} channel(s), ${format} format"
+            
+            # Update config.yaml with working parameters
+            if [[ -f "config.yaml" ]]; then
+                log "Updating config.yaml with working audio parameters..."
+                sed -i.tmp "s/sample_rate: .*/sample_rate: $rate/" config.yaml
+                sed -i.tmp "s/input_channels: .*/input_channels: $channels/" config.yaml
+                rm -f config.yaml.tmp
+                success "Updated config.yaml: sample_rate=$rate, input_channels=$channels"
             fi
-        done
+            
+            recording_success=true
+            rm -f "$TEST_FILE"
+            break
+        else
+            log "Failed with ${rate}Hz, ${channels}ch, ${format}"
+        fi
     done
+    
+    if [[ "$recording_success" == false ]]; then
+        error "All recording attempts failed!"
+        echo
+        error "Possible issues:"
+        echo "  1. Device permissions - check: ls -la /dev/snd/"
+        echo "  2. Device in use by another application"
+        echo "  3. Hardware issue with Sound Blaster"
+        echo "  4. ALSA configuration problem"
+        echo
+        log "Manual test commands to try:"
+        echo "  arecord -l                     # List devices"
+        echo "  lsof /dev/snd/*               # Check what's using audio"
+        echo "  fuser -v /dev/snd/*           # Check processes using audio"
+        echo "  arecord -D $ALSA_DEVICE --dump-hw-params  # Check capabilities"
+        exit 1
+    fi
 fi
 
 # Step 6: Update config.yaml
