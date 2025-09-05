@@ -13,14 +13,25 @@ from collections import deque
 from scipy import signal
 import logging
 
-# Configure environment for Pipewire compatibility
-os.environ['PULSE_RUNTIME_PATH'] = '/run/user/' + str(os.getuid()) + '/pulse'
-os.environ['PULSE_SERVER'] = 'unix:/run/user/' + str(os.getuid()) + '/pulse/native'
+# Configure environment for Pipewire compatibility - force ALSA backend
+os.environ['SD_ENABLE_PULSE'] = '0'  # Disable PulseAudio backend
+os.environ['SDL_AUDIODRIVER'] = 'alsa'  # Force ALSA
+# Remove any PulseAudio environment variables that might interfere
+for env_var in ['PULSE_RUNTIME_PATH', 'PULSE_SERVER']:
+    if env_var in os.environ:
+        del os.environ[env_var]
 
 logger = logging.getLogger(__name__)
 
 class AudioProcessor:
     def __init__(self, config):
+        # Force sounddevice to use ALSA backend
+        try:
+            sd.default.hostapi = 'ALSA'
+            logger.info("Forced sounddevice to use ALSA backend")
+        except Exception as e:
+            logger.warning(f"Could not force ALSA backend: {e}")
+        
         self.config = config['audio']
         self.processing_config = config['audio_processing']
         
