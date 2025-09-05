@@ -14,6 +14,8 @@ import yaml
 import logging
 from pathlib import Path
 import sys
+import subprocess
+import os
 
 # Import our modules
 from main import LightShowController
@@ -41,6 +43,9 @@ class LightShowUI:
         self.ui_update_thread = None
         self.stop_ui_updates = False
         
+        # Initialize audio system first
+        self._initialize_audio_system()
+        
         # Setup UI
         self._setup_styles()
         self._create_widgets()
@@ -59,6 +64,64 @@ class LightShowUI:
         except Exception as e:
             messagebox.showerror("Config Error", f"Could not load config.yaml: {e}")
             return {}
+    
+    def _initialize_audio_system(self):
+        """Initialize and fix audio system before starting the lightshow."""
+        logger.info("Initializing audio system...")
+        
+        try:
+            # Stop conflicting audio services
+            logger.info("Stopping conflicting audio services...")
+            subprocess.run(['sudo', 'systemctl', 'stop', 'pulseaudio'], 
+                         capture_output=True, timeout=10)
+            subprocess.run(['systemctl', '--user', 'stop', 'pulseaudio'], 
+                         capture_output=True, timeout=10)
+            subprocess.run(['systemctl', '--user', 'stop', 'pipewire'], 
+                         capture_output=True, timeout=10)
+            subprocess.run(['systemctl', '--user', 'stop', 'pipewire-pulse'], 
+                         capture_output=True, timeout=10)
+            
+            time.sleep(2)
+            
+            # Restart audio services
+            logger.info("Restarting audio services...")
+            subprocess.run(['sudo', 'systemctl', 'restart', 'alsa-state'], 
+                         capture_output=True, timeout=10)
+            time.sleep(1)
+            
+            # Start Pipewire
+            subprocess.run(['systemctl', '--user', 'start', 'pipewire'], 
+                         capture_output=True, timeout=10)
+            time.sleep(1)
+            subprocess.run(['systemctl', '--user', 'start', 'pipewire-pulse'], 
+                         capture_output=True, timeout=10)
+            time.sleep(2)
+            
+            # Test Sound Blaster detection
+            result = subprocess.run(['arecord', '-l'], capture_output=True, text=True, timeout=5)
+            if 'sound blaster' in result.stdout.lower() or 'creative' in result.stdout.lower() or 's3' in result.stdout.lower():
+                logger.info("✓ Sound Blaster detected")
+            else:
+                logger.warning("⚠ Sound Blaster not detected, check USB connection")
+            
+            # Quick audio test
+            test_result = subprocess.run([
+                'timeout', '2', 'arecord', '-D', 'hw:2,0', '-f', 'S16_LE', 
+                '-r', '44100', '-c', '2', '-d', '1', '/tmp/test_audio.wav'
+            ], capture_output=True, timeout=5)
+            
+            if test_result.returncode == 0:
+                logger.info("✓ Audio system test passed")
+                subprocess.run(['rm', '-f', '/tmp/test_audio.wav'], capture_output=True)
+            else:
+                logger.warning("⚠ Audio system test failed")
+            
+            logger.info("Audio system initialization complete")
+            
+        except subprocess.TimeoutExpired:
+            logger.warning("Audio initialization timed out, continuing anyway")
+        except Exception as e:
+            logger.warning(f"Audio initialization error: {e}, continuing anyway")
     
     def _setup_styles(self):
         """Setup modern dark theme styles."""
